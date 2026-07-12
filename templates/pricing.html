@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Subscription Plans</h2>
+<div class="grid">
+  {% for key, plan in plans.items() %}
+  <div class="card">
+    <h3>{{ plan.name }}</h3>
+    <p>{{ plan.description }}</p>
+    <p><strong>{{ plan.price }}</strong> / {{ plan.duration }}</p>
+    <p>Max slips: {{ plan.max_odds }} odds</p>
+    <p>Sports: {{ plan.allowed_sports | join(', ') }}</p>
+    <p>Markets: {{ plan.allowed_markets | join(', ') }}</p>
+    <form method="post" action="/predictions">
+      <input type="hidden" name="plan" value="{{ key }}">
+      <button type="submit">Choose {{ plan.name }}</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

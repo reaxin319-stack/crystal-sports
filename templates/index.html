@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>Crystal-Sports Prediction Hub</h2>
+  <p>Daily picks for soccer, hockey, and tennis with admin-controlled markets and subscription-based access.</p>
+  <a class="btn" href="/predictions">View Today's Picks</a>
+  <a class="btn" href="/admin" style="margin-left:8px;">Admin</a>
+</div>
+
+<div class="grid">
+  {% for sport in sports %}
+  <div class="card">
+    <h3>{{ sport.name }}</h3>
+    <p>Leagues: {{ sport.leagues | join(', ') }}</p>
+    <div class="pill">Multi-market</div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

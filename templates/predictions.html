@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>Today's Picks</h2>
+  <p>Current plan: <strong>{{ subscription.name }}</strong> · {{ subscription.duration }} · {{ subscription.max_odds }} odds max</p>
+</div>
+
+{% if picks %}
+<div class="grid">
+  {% for pick in picks %}
+  <div class="card">
+    <h3>{{ pick.home_team }} vs {{ pick.away_team }}</h3>
+    <p><strong>{{ pick.league }}</strong> · {{ pick.market }} · {{ pick.sport }}</p>
+    <p>Selection: <strong>{{ pick.selection }}</strong></p>
+    <p>Odds: {{ pick.odds }}</p>
+    <p>{{ pick.reason }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">No picks available right now. Please try again later.</div>
+{% endif %}
+
+{% if combo_slips %}
+<div class="card">
+  <h3>VIP Magic Combination Slips</h3>
+  {% for combo in combo_slips %}
+  <div class="card">
+    <h4>{{ combo.title }}</h4>
+    <p>Combined odds estimate: {{ combo.combined_odds }}</p>
+    <ul>
+      {% for item in combo.items %}
+      <li>{{ item.home_team }} vs {{ item.away_team }} · {{ item.market }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
