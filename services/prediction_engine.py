@@ -79,6 +79,7 @@ class PredictionEngine:
                 "market": "WLD",
                 "selection": selected,
                 "odds": selected_odds,
+                "scheduled_at": match.get("scheduled_at"),
                 "reason": f"Value edge on {selected} based on current market pricing.",
             }
         return None
@@ -101,6 +102,7 @@ class PredictionEngine:
                 "market": "Over/Under",
                 "selection": selection,
                 "odds": selected_odds,
+                "scheduled_at": match.get("scheduled_at"),
                 "reason": "Momentum and pace suggest a strong total trend.",
             }
         return None
@@ -118,6 +120,7 @@ class PredictionEngine:
                 "market": "Cards",
                 "selection": selection,
                 "odds": selected_odds,
+                "scheduled_at": match.get("scheduled_at"),
                 "reason": "Card trend and referee profile favor this market.",
             }
         return None
@@ -139,6 +142,7 @@ class PredictionEngine:
                 "market": "Who Wins Set",
                 "selection": selection,
                 "odds": selected_odds,
+                "scheduled_at": match.get("scheduled_at"),
                 "reason": "Surface and recent performance favor this set winner.",
             }
         return None

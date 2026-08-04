@@ -3,14 +3,19 @@
 <div class="card">
   <h2>Today's Picks</h2>
   <p>Current plan: <strong>{{ subscription.name }}</strong> · {{ subscription.duration }} · {{ subscription.max_odds }} odds max</p>
+  <p>Date: <strong>{{ current_date }}</strong></p>
 </div>
 
-{% if picks %}
+<div class="card">
+  <h3>Today's Predictions</h3>
+</div>
+{% if today_picks %}
 <div class="grid">
-  {% for pick in picks %}
+  {% for pick in today_picks %}
   <div class="card">
     <h3>{{ pick.home_team }} vs {{ pick.away_team }}</h3>
     <p><strong>{{ pick.league }}</strong> · {{ pick.market }} · {{ pick.sport }}</p>
+    <p>Time: {{ pick.scheduled_at or 'TBD' }}</p>
     <p>Selection: <strong>{{ pick.selection }}</strong></p>
     <p>Odds: {{ pick.odds }}</p>
     <p>{{ pick.reason }}</p>
@@ -18,6 +23,48 @@
   {% endfor %}
 </div>
 {% else %}
+<div class="card">No picks available for today. Check back later.</div>
+{% endif %}
+
+<div class="card">
+  <h3>Tomorrow's Predictions</h3>
+</div>
+{% if tomorrow_picks %}
+<div class="grid">
+  {% for pick in tomorrow_picks %}
+  <div class="card">
+    <h3>{{ pick.home_team }} vs {{ pick.away_team }}</h3>
+    <p><strong>{{ pick.league }}</strong> · {{ pick.market }} · {{ pick.sport }}</p>
+    <p>Time: {{ pick.scheduled_at or 'TBD' }}</p>
+    <p>Selection: <strong>{{ pick.selection }}</strong></p>
+    <p>Odds: {{ pick.odds }}</p>
+    <p>{{ pick.reason }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">No picks available for tomorrow yet. Check again soon.</div>
+{% endif %}
+
+{% if later_picks %}
+<div class="card">
+  <h3>Other Upcoming Predictions</h3>
+</div>
+<div class="grid">
+  {% for pick in later_picks %}
+  <div class="card">
+    <h3>{{ pick.home_team }} vs {{ pick.away_team }}</h3>
+    <p><strong>{{ pick.league }}</strong> · {{ pick.market }} · {{ pick.sport }}</p>
+    <p>Time: {{ pick.scheduled_at or 'TBD' }}</p>
+    <p>Selection: <strong>{{ pick.selection }}</strong></p>
+    <p>Odds: {{ pick.odds }}</p>
+    <p>{{ pick.reason }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if not today_picks and not tomorrow_picks and not later_picks %}
 <div class="card">No picks available right now. Please try again later.</div>
 {% endif %}
 

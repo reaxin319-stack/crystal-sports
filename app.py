@@ -94,9 +94,40 @@ def predictions():
         picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
         combo_slips = []
 
+    today = datetime.utcnow().date()
+    tomorrow = today + timedelta(days=1)
+
+    today_picks = []
+    tomorrow_picks = []
+    later_picks = []
+
+    for pick in picks:
+        scheduled_at = pick.get("scheduled_at")
+        if scheduled_at:
+            try:
+                scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+            except ValueError:
+                scheduled_dt = None
+        else:
+            scheduled_dt = None
+
+        if scheduled_dt:
+            pick["scheduled_at"] = scheduled_dt.strftime("%Y-%m-%d %H:%M UTC")
+            if scheduled_dt.date() == today:
+                today_picks.append(pick)
+            elif scheduled_dt.date() == tomorrow:
+                tomorrow_picks.append(pick)
+            else:
+                later_picks.append(pick)
+        else:
+            later_picks.append(pick)
+
     return render_template(
         "predictions.html",
-        picks=picks,
+        current_date=today.strftime("%A, %B %d"),
+        today_picks=today_picks,
+        tomorrow_picks=tomorrow_picks,
+        later_picks=later_picks,
         combo_slips=combo_slips,
         subscription=subscription,
         leagues=app.config["DATA_SERVICE"].get_configured_leagues(),
