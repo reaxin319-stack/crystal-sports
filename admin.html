@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>Admin Control Panel</h2>
+  <p>Configure which sports, markets, and subscription tiers are available to users.</p>
+</div>
+
+<div class="card">
+  <h3>Create New User</h3>
+  <form method="post" action="/admin/create-user">
+    <label>Username</label><br>
+    <input name="username" placeholder="username"><br>
+    <label>Email</label><br>
+    <input name="email" placeholder="email"><br>
+    <label>Password</label><br>
+    <input name="password" type="password" placeholder="leave blank for default password"><br>
+    <label>Plan</label><br>
+    <select name="plan">
+      <option value="free">Free</option>
+      <option value="pro">Pro</option>
+      <option value="elite">Elite</option>
+      <option value="vip">VIP</option>
+    </select>
+    <div style="margin-top:12px">
+      <button type="submit">Create user</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Set User Subscription</h3>
+  <form method="post">
+    <label>Username</label><br>
+    <input name="target_username" placeholder="username"><br>
+    <label>Plan</label><br>
+    <select name="target_plan">
+      <option value="free">Free</option>
+      <option value="pro">Pro</option>
+      <option value="elite">Elite</option>
+      <option value="vip">VIP</option>
+    </select>
+    <div style="margin-top:12px">
+      <button type="submit">Set plan for user</button>
+    </div>
+  </form>
+</div>
+
+<form method="post" action="/admin">
+  <div class="card">
+    <h3>Enabled Sports</h3>
+    {% for sport in sports %}
+    <label><input type="checkbox" name="sports" value="{{ sport.key }}" {% if sport.key in admin_config.enabled_sports %}checked{% endif %}> {{ sport.name }}</label><br>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3>Markets by Sport</h3>
+    {% for sport in sports %}
+    <div>
+      <strong>{{ sport.name }}</strong><br>
+      {% for market in admin_config.allowed_markets.get(sport.key, []) %}
+      <label><input type="checkbox" name="markets_{{ sport.key }}" value="{{ market }}" checked> {{ market }}</label>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3>Plan Settings</h3>
+    {% for plan_name, plan in admin_config.plans.items() %}
+    <div style="margin-bottom:12px;">
+      <h4>{{ plan_name }}</h4>
+    <label>Stripe Price ID</label><br>
+    <input type="text" name="{{ plan_name }}_stripe_price" value="{{ plan.stripe_price_id or '' }}" placeholder="price_xxx"><br>
+      <input type="text" name="{{ plan_name }}_price" value="{{ plan.price }}" placeholder="price"><br>
+      <input type="text" name="{{ plan_name }}_duration" value="{{ plan.duration }}" placeholder="duration"><br>
+      <input type="number" name="{{ plan_name }}_max_odds" value="{{ plan.max_odds }}" placeholder="max odds"><br>
+      <textarea name="{{ plan_name }}_description">{{ plan.description }}</textarea><br>
+      <label><input type="checkbox" name="{{ plan_name }}_sports" value="soccer" {% if 'soccer' in plan.allowed_sports %}checked{% endif %}> Soccer</label>
+      <label><input type="checkbox" name="{{ plan_name }}_sports" value="hockey" {% if 'hockey' in plan.allowed_sports %}checked{% endif %}> Hockey</label>
+      <label><input type="checkbox" name="{{ plan_name }}_sports" value="tennis" {% if 'tennis' in plan.allowed_sports %}checked{% endif %}> Tennis</label><br>
+      <label><input type="checkbox" name="{{ plan_name }}_markets" value="WLD" {% if 'WLD' in plan.allowed_markets %}checked{% endif %}> WLD</label>
+      <label><input type="checkbox" name="{{ plan_name }}_markets" value="Over/Under" {% if 'Over/Under' in plan.allowed_markets %}checked{% endif %}> Over/Under</label>
+      <label><input type="checkbox" name="{{ plan_name }}_markets" value="Cards" {% if 'Cards' in plan.allowed_markets %}checked{% endif %}> Cards</label>
+      <label><input type="checkbox" name="{{ plan_name }}_markets" value="Who Wins Set" {% if 'Who Wins Set' in plan.allowed_markets %}checked{% endif %}> Who Wins Set</label>
+    </div>
+    {% endfor %}
+  </div>
+
+  <button type="submit">Save Settings</button>
+</form>
+{% endblock %}

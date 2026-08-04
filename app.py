@@ -34,6 +34,10 @@ def current_user() -> dict | None:
     return models.get_user_by_id(uid)
 
 
+def is_admin_user(user: dict | None) -> bool:
+    return bool(user and user.get("is_admin"))
+
+
 @app.route("/")
 def index():
     data_service = app.config["DATA_SERVICE"]
@@ -70,11 +74,14 @@ def predictions():
         subscription = admin_service.get_plan("free")
 
     matches = app.config["DATA_SERVICE"].get_live_matches()
-    picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
-
-    if subscription.get("name", "").lower() == "vip":
-        combo_slips = app.config["PREDICTION_ENGINE"].build_magic_combinations(matches, subscription, admin_service.get_config())
+    if is_admin_user(user):
+        picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
+        if subscription.get("name", "").lower() == "vip":
+            combo_slips = app.config["PREDICTION_ENGINE"].build_magic_combinations(matches, subscription, admin_service.get_config())
+        else:
+            combo_slips = []
     else:
+        picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
         combo_slips = []
 
     return render_template(
@@ -84,22 +91,46 @@ def predictions():
         subscription=subscription,
         leagues=app.config["DATA_SERVICE"].get_configured_leagues(),
         admin_config=admin_service.get_config(),
+        is_admin=is_admin_user(user),
     )
 
 
 @app.route("/admin", methods=["GET", "POST"])
 def admin_panel():
+    user = current_user()
+    if not is_admin_user(user):
+        return redirect(url_for("predictions"))
+
     admin_service = app.config["ADMIN_SERVICE"]
     if request.method == "POST":
-        # handle admin user subscription changes
         target_username = request.form.get("target_username")
         target_plan = request.form.get("target_plan")
         if target_username and target_plan:
-            user = models.get_user_by_username(target_username)
-            if user:
-                models.update_subscription(user["id"], target_plan)
+            target_user = models.get_user_by_username(target_username)
+            if target_user:
+                models.update_subscription(target_user["id"], target_plan)
         admin_service.update_from_form(request)
     return render_template("admin.html", admin_config=admin_service.get_config(), sports=admin_service.get_available_sports())
+
+
+@app.route("/admin/create-user", methods=["GET", "POST"])
+def admin_create_user():
+    user = current_user()
+    if not is_admin_user(user):
+        return redirect(url_for("predictions"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "").strip()
+        plan = request.form.get("plan", "free")
+        if not username or not email:
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Username and email are required")
+        if models.get_user_by_username(username):
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Username already exists")
+        models.create_user(username, email, password or models.DEFAULT_ADMIN_PASSWORD, plan)
+        return redirect(url_for("admin_panel"))
+    return redirect(url_for("admin_panel"))
 
 
 @app.route("/register", methods=["GET", "POST"])
