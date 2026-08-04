@@ -1,4 +1,10 @@
 from datetime import datetime, timedelta
+import os
+import sys
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 from flask import Flask, redirect, render_template, request, session, url_for
 
@@ -9,7 +15,6 @@ from services.subscription import SubscriptionService
 import models
 from werkzeug.security import generate_password_hash
 import re
-import os
 try:
     import stripe
 except Exception:
@@ -336,7 +341,8 @@ def reset_subscription():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    port = int(os.getenv("PORT", 8080))
+    app.run(debug=True, host="0.0.0.0", port=port)
 
 
 @app.route('/stripe-webhook', methods=['POST'])
