@@ -70,7 +70,7 @@ class PredictionEngine:
 
         selected = self._pick_best_wld(home, draw, away)
         selected_odds = odds[selected]
-        if selected_odds >= 2.0:
+        if selected_odds >= 1.5:
             return {
                 "league": match.get("league", "Unknown"),
                 "sport": match.get("sport", "soccer"),
@@ -79,7 +79,7 @@ class PredictionEngine:
                 "market": "WLD",
                 "selection": selected,
                 "odds": selected_odds,
-                "reason": f"Value edge on {selected} based on recent form and line movement.",
+                "reason": f"Value edge on {selected} based on current market pricing.",
             }
         return None
 

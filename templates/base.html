@@ -5,14 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Crystal Sports</title>
   <style>
-    body { font-family: Arial, sans-serif; background: #07111f; color: #f4f7fb; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      color: #f4f7fb;
+      min-height: 100vh;
+      background: linear-gradient(135deg, rgba(7, 17, 31, 0.9), rgba(7, 17, 31, 0.72)),
+                  url("https://images.unsplash.com/photo-1517649763962-0c623066013b?auto=format&fit=crop&w=1600&q=80") center/cover no-repeat fixed;
+    }
     .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
     nav { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; }
     a { color: #6ee7f9; text-decoration: none; }
-    .card { background: #10233b; border: 1px solid #274060; border-radius: 12px; padding: 20px; margin: 16px 0; }
+    .card {
+      background: rgba(16, 35, 59, 0.9);
+      border: 1px solid rgba(39, 64, 96, 0.9);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 16px 0;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+    }
     button, .btn { background: #f59e0b; color: #08101b; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; }
     .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-    .pill { display: inline-block; background: #1b3550; padding: 6px 10px; border-radius: 999px; margin-right: 8px; }
+    .pill { display: inline-block; background: rgba(27, 53, 80, 0.9); padding: 6px 10px; border-radius: 999px; margin-right: 8px; }
   </style>
 </head>
 <body>
@@ -23,6 +39,11 @@
         <a href="/">Home</a> |
         <a href="/pricing">Pricing</a> |
         <a href="/predictions">Predictions</a>
+        {% if session.get('user_id') %}
+          | <a href="/logout">Sign out</a>
+        {% else %}
+          | <a href="/login">Sign in</a> | <a href="/register">Register</a>
+        {% endif %}
       </div>
     </nav>
     {% block content %}{% endblock %}

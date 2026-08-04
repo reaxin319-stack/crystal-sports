@@ -6,17 +6,13 @@
   ],
   "allowed_markets": {
     "soccer": [
-      "WLD",
-      "Over/Under",
-      "Cards"
+      "WLD"
     ],
     "hockey": [
-      "WLD",
-      "Over/Under"
+      "WLD"
     ],
     "tennis": [
-      "WLD",
-      "Who Wins Set"
+      "WLD"
     ]
   },
   "plans": {
@@ -26,62 +22,47 @@
       "duration": "1 month",
       "max_odds": 3,
       "allowed_sports": [
-        "soccer"
+        "soccer",
+        "hockey",
+        "tennis"
       ],
       "allowed_markets": [
-        "WLD"
+        "WLD",
+        "Over/Under",
+        "Who Wins Set"
       ],
-      "description": "View 3-odds soccer slips for one month."
+      "description": "View live soccer, hockey, and tennis picks for one month.",
+      "stripe_price_id": ""
     },
     "pro": {
       "name": "Pro",
-      "price": "$19",
+      "price": "$10",
       "duration": "1 month",
       "max_odds": 5,
-      "allowed_sports": [
-        "soccer",
-        "hockey"
-      ],
-      "allowed_markets": [
-        "WLD",
-        "Over/Under"
-      ],
-      "description": "Unlock soccer and hockey picks with 5-odds slips."
+      "allowed_sports": [],
+      "allowed_markets": [],
+      "description": "Unlock soccer and hockey picks with 5-odds slips.",
+      "stripe_price_id": ""
     },
     "elite": {
       "name": "Elite",
-      "price": "$39",
+      "price": "$25",
       "duration": "1 month",
       "max_odds": 10,
-      "allowed_sports": [
-        "soccer",
-        "hockey",
-        "tennis"
-      ],
-      "allowed_markets": [
-        "WLD",
-        "Over/Under",
-        "Who Wins Set"
-      ],
-      "description": "Access all three sports and 10-odds slips."
+      "allowed_sports": [],
+      "allowed_markets": [],
+      "description": "Access all three sports and 10-odds slips.",
+      "stripe_price_id": ""
     },
     "vip": {
       "name": "VIP",
-      "price": "$79",
+      "price": "$50",
       "duration": "1 month",
       "max_odds": 20,
-      "allowed_sports": [
-        "soccer",
-        "hockey",
-        "tennis"
-      ],
-      "allowed_markets": [
-        "WLD",
-        "Over/Under",
-        "Cards",
-        "Who Wins Set"
-      ],
-      "description": "Unlock premium multi-sport slips and auto magic combinations."
+      "allowed_sports": [],
+      "allowed_markets": [],
+      "description": "Unlock premium multi-sport slips and auto magic combinations.",
+      "stripe_price_id": ""
     }
   }
 }

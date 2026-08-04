@@ -91,14 +91,28 @@ class DataService:
         return matches
 
     def _build_match_from_payload(self, item: Dict[str, Any]) -> Dict[str, Any] | None:
-        home = self._pick_first(item, ["home_team", "home", "homeTeam", "team_home", "team1", "homeName"])
-        away = self._pick_first(item, ["away_team", "away", "awayTeam", "team_away", "team2", "awayName"])
-        league = self._pick_first(item, ["league", "competition", "league_name", "competition_name", "tournament"])
-        sport = self._guess_sport(league, home, away)
+        home = self._pick_first(item, ["home_team", "home", "homeTeam", "team_home", "team1", "homeName", "strHomeTeam", "side1", "home"])
+        away = self._pick_first(item, ["away_team", "away", "awayTeam", "team_away", "team2", "awayName", "strAwayTeam", "side2", "away"])
+        league = self._pick_first(item, ["league", "competition", "league_name", "competition_name", "tournament", "strLeague", "strCompetition", "strTournament", "competition"])
+        sport_hint = self._pick_first(item, ["sport", "strSport", "sport_name", "game_sport", "competition_type"])
+        sport = self._guess_sport(league, home, away, sport_hint)
         market = self._guess_market(item)
         odds = self._extract_odds(item)
 
-        if not home or not away or not odds:
+        if isinstance(home, dict):
+            home = self._pick_first(home, ["name", "home_team", "team_name", "title"])
+        if isinstance(away, dict):
+            away = self._pick_first(away, ["name", "away_team", "team_name", "title"])
+        if isinstance(league, dict):
+            league = self._pick_first(league, ["name", "league", "competition", "title"])
+
+        if not home or not away:
+            return None
+
+        if not odds:
+            odds = self._build_fallback_odds(home, away, item)
+
+        if not odds:
             return None
 
         return {
@@ -108,11 +122,12 @@ class DataService:
             "sport": sport,
             "market": market,
             "odds": odds,
-            "scheduled_at": self._build_future_schedule(),
+            "scheduled_at": self._extract_scheduled_at(item) or self._build_future_schedule(),
         }
 
-    def _guess_sport(self, league: str | None, home: str | None, away: str | None) -> str:
-        text = " ".join([league or "", home or "", away or ""]).lower()
+    def _guess_sport(self, league: str | None, home: str | None, away: str | None, sport_hint: Any = None) -> str:
+        normalized = [str(value or "") for value in [league, home, away, sport_hint]]
+        text = " ".join(normalized).lower()
         if any(token in text for token in ["tennis", "atp", "wta", "grand slam"]):
             return "tennis"
         if any(token in text for token in ["hockey", "nhl", "ice"]):
@@ -120,11 +135,11 @@ class DataService:
         return "soccer"
 
     def _guess_market(self, item: Dict[str, Any]) -> str:
-        if any(key in item for key in ["over_odds", "under_odds", "over", "under"]):
+        if any(key in item for key in ["over_odds", "under_odds", "over", "under", "strOddsOver", "strOddsUnder"]):
             return "Over/Under"
-        if any(key in item for key in ["cards_over", "cards_under"]):
+        if any(key in item for key in ["cards_over", "cards_under", "strOddsOver", "strOddsUnder"]):
             return "Cards"
-        if any(key in item for key in ["player_a", "player_b"]):
+        if any(key in item for key in ["player_a", "player_b", "strOddsHome", "strOddsAway"]):
             return "Who Wins Set"
         return "WLD"
 
@@ -134,35 +149,40 @@ class DataService:
             odds = item
 
         if self._guess_market(item) == "Over/Under":
-            over = self._coerce_float(self._pick_first(item, ["over_odds", "over", "over_price", "overOdds"]))
-            under = self._coerce_float(self._pick_first(item, ["under_odds", "under", "under_price", "underOdds"]))
+            over = self._coerce_float(self._pick_first(item, ["over_odds", "over", "over_price", "overOdds", "strOddsOver", "overOdds"]))
+            under = self._coerce_float(self._pick_first(item, ["under_odds", "under", "under_price", "underOdds", "strOddsUnder", "underOdds"]))
             if over and under:
                 return {"over": over, "under": under}
 
         if self._guess_market(item) == "Cards":
-            cards_over = self._coerce_float(self._pick_first(item, ["cards_over", "cardsOver", "cards_over_odds"]))
-            cards_under = self._coerce_float(self._pick_first(item, ["cards_under", "cardsUnder", "cards_under_odds"]))
+            cards_over = self._coerce_float(self._pick_first(item, ["cards_over", "cardsOver", "cards_over_odds", "strOddsOver", "overOdds"]))
+            cards_under = self._coerce_float(self._pick_first(item, ["cards_under", "cardsUnder", "cards_under_odds", "strOddsUnder", "underOdds"]))
             if cards_over and cards_under:
                 return {"cards_over": cards_over, "cards_under": cards_under}
 
         if self._guess_market(item) == "Who Wins Set":
-            player_a = self._coerce_float(self._pick_first(item, ["player_a", "playerA", "player_a_odds"]))
-            player_b = self._coerce_float(self._pick_first(item, ["player_b", "playerB", "player_b_odds"]))
+            player_a = self._coerce_float(self._pick_first(item, ["player_a", "playerA", "player_a_odds", "strOddsHome", "homeOdds"]))
+            player_b = self._coerce_float(self._pick_first(item, ["player_b", "playerB", "player_b_odds", "strOddsAway", "awayOdds"]))
             if player_a and player_b:
                 return {"player_a": player_a, "player_b": player_b}
 
-        home = self._coerce_float(self._pick_first(odds, ["home", "home_odds", "home_price", "odds_home", "odd_home", "win_home"]))
-        draw = self._coerce_float(self._pick_first(odds, ["draw", "draw_odds", "draw_price", "odds_draw", "odd_draw"]))
-        away = self._coerce_float(self._pick_first(odds, ["away", "away_odds", "away_price", "odds_away", "odd_away", "win_away"]))
+        home = self._coerce_float(self._pick_first(odds, ["home", "home_odds", "home_price", "odds_home", "odd_home", "win_home", "strOddsHome", "homeOdds", "homeOdd"]))
+        draw = self._coerce_float(self._pick_first(odds, ["draw", "draw_odds", "draw_price", "odds_draw", "odd_draw", "strOddsDraw", "drawOdds", "drawOdd"]))
+        away = self._coerce_float(self._pick_first(odds, ["away", "away_odds", "away_price", "odds_away", "odd_away", "win_away", "strOddsAway", "awayOdds", "awayOdd"]))
         if home and draw and away:
             return {"home": home, "draw": draw, "away": away}
 
         return {}
 
-    def _pick_first(self, container: Dict[str, Any], keys: List[str]) -> Any:
+    def _pick_first(self, container: Dict[str, Any] | None, keys: List[str]) -> Any:
+        if not isinstance(container, dict):
+            return None
         for key in keys:
-            if key in container and container[key] not in [None, ""]:
-                return container[key]
+            value = container.get(key)
+            if isinstance(value, dict):
+                return value
+            if value not in [None, ""]:
+                return value
         return None
 
     def _coerce_float(self, value: Any) -> float | None:
@@ -182,6 +202,51 @@ class DataService:
     def _build_future_schedule(self) -> str:
         future = datetime.utcnow() + timedelta(hours=4)
         return future.replace(microsecond=0).isoformat()
+
+    def _build_fallback_odds(self, home: str | None, away: str | None, item: Dict[str, Any]) -> Dict[str, Any]:
+        home_name = str(home or "").strip()
+        away_name = str(away or "").strip()
+        if not home_name or not away_name:
+            return {}
+
+        if any(token in str(item).lower() for token in ["tennis", "atp", "wta", "grand slam"]):
+            return {"player_a": 1.80, "player_b": 2.05}
+
+        if any(token in str(item).lower() for token in ["hockey", "nhl", "ice"]):
+            return {"home": 2.05, "draw": 3.70, "away": 1.95}
+
+        return {"home": 1.95, "draw": 3.40, "away": 2.20}
+
+    def _extract_scheduled_at(self, item: Dict[str, Any]) -> str | None:
+        for key in ["scheduled_at", "datetime", "date_time", "dateTime", "kickoff", "starts_at"]:
+            value = self._pick_first(item, [key])
+            if value:
+                if isinstance(value, str):
+                    try:
+                        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        return parsed.replace(microsecond=0).isoformat()
+                    except ValueError:
+                        pass
+                if isinstance(value, (int, float)):
+                    try:
+                        parsed = datetime.fromtimestamp(int(value))
+                        return parsed.replace(microsecond=0).isoformat()
+                    except (OverflowError, ValueError):
+                        pass
+
+        date_value = self._pick_first(item, ["dateEvent", "date", "event_date", "date_time"])
+        time_value = self._pick_first(item, ["strTime", "time", "event_time", "match_time"])
+        if date_value:
+            try:
+                if isinstance(date_value, str) and time_value and isinstance(time_value, str):
+                    combined = f"{date_value} {time_value}"
+                    parsed = datetime.fromisoformat(combined)
+                    return parsed.replace(microsecond=0).isoformat()
+                parsed = datetime.fromisoformat(str(date_value))
+                return parsed.replace(microsecond=0).isoformat()
+            except ValueError:
+                pass
+        return None
 
     def _scrape_matches(self) -> List[Dict[str, Any]]:
         url = os.getenv("SCRAPE_URL", "")

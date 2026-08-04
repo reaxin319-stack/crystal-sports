@@ -5,6 +5,46 @@
   <p>Configure which sports, markets, and subscription tiers are available to users.</p>
 </div>
 
+<div class="card">
+  <h3>Create New User</h3>
+  <form method="post" action="/admin/create-user">
+    <label>Username</label><br>
+    <input name="username" placeholder="username"><br>
+    <label>Email</label><br>
+    <input name="email" placeholder="email"><br>
+    <label>Password</label><br>
+    <input name="password" type="password" placeholder="leave blank for default password"><br>
+    <label>Plan</label><br>
+    <select name="plan">
+      <option value="free">Free</option>
+      <option value="pro">Pro</option>
+      <option value="elite">Elite</option>
+      <option value="vip">VIP</option>
+    </select>
+    <div style="margin-top:12px">
+      <button type="submit">Create user</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Set User Subscription</h3>
+  <form method="post">
+    <label>Username</label><br>
+    <input name="target_username" placeholder="username"><br>
+    <label>Plan</label><br>
+    <select name="target_plan">
+      <option value="free">Free</option>
+      <option value="pro">Pro</option>
+      <option value="elite">Elite</option>
+      <option value="vip">VIP</option>
+    </select>
+    <div style="margin-top:12px">
+      <button type="submit">Set plan for user</button>
+    </div>
+  </form>
+</div>
+
 <form method="post" action="/admin">
   <div class="card">
     <h3>Enabled Sports</h3>
@@ -30,6 +70,8 @@
     {% for plan_name, plan in admin_config.plans.items() %}
     <div style="margin-bottom:12px;">
       <h4>{{ plan_name }}</h4>
+    <label>Stripe Price ID</label><br>
+    <input type="text" name="{{ plan_name }}_stripe_price" value="{{ plan.stripe_price_id or '' }}" placeholder="price_xxx"><br>
       <input type="text" name="{{ plan_name }}_price" value="{{ plan.price }}" placeholder="price"><br>
       <input type="text" name="{{ plan_name }}_duration" value="{{ plan.duration }}" placeholder="duration"><br>
       <input type="number" name="{{ plan_name }}_max_odds" value="{{ plan.max_odds }}" placeholder="max odds"><br>

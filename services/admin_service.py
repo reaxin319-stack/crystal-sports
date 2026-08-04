@@ -38,9 +38,10 @@ class AdminConfigService:
                     "price": "$0",
                     "duration": "1 month",
                     "max_odds": 3,
-                    "allowed_sports": ["soccer"],
-                    "allowed_markets": ["WLD"],
-                    "description": "View 3-odds soccer slips for one month.",
+                    "allowed_sports": ["soccer", "hockey", "tennis"],
+                    "allowed_markets": ["WLD", "Over/Under", "Who Wins Set"],
+                    "description": "View live soccer, hockey, and tennis picks for one month.",
+                        "stripe_price_id": "",
                 },
                 "pro": {
                     "name": "Pro",
@@ -50,6 +51,7 @@ class AdminConfigService:
                     "allowed_sports": ["soccer", "hockey"],
                     "allowed_markets": ["WLD", "Over/Under"],
                     "description": "Unlock soccer and hockey picks with 5-odds slips.",
+                        "stripe_price_id": "",
                 },
                 "elite": {
                     "name": "Elite",
@@ -59,6 +61,7 @@ class AdminConfigService:
                     "allowed_sports": ["soccer", "hockey", "tennis"],
                     "allowed_markets": ["WLD", "Over/Under", "Who Wins Set"],
                     "description": "Access all three sports and 10-odds slips.",
+                        "stripe_price_id": "",
                 },
                 "vip": {
                     "name": "VIP",
@@ -68,6 +71,7 @@ class AdminConfigService:
                     "allowed_sports": ["soccer", "hockey", "tennis"],
                     "allowed_markets": ["WLD", "Over/Under", "Cards", "Who Wins Set"],
                     "description": "Unlock premium multi-sport slips and auto magic combinations.",
+                        "stripe_price_id": "",
                 },
             },
         }
@@ -131,6 +135,7 @@ class AdminConfigService:
             plan["price"] = form_values.get(f"{plan_name}_price", plan.get("price", "$0"))
             plan["duration"] = form_values.get(f"{plan_name}_duration", plan.get("duration", "1 month"))
             plan["description"] = form_values.get(f"{plan_name}_description", plan.get("description", ""))
+            plan["stripe_price_id"] = form_values.get(f"{plan_name}_stripe_price", plan.get("stripe_price_id", ""))
             plan["allowed_sports"] = [value for value in form_values.getlist(f"{plan_name}_sports")]
             plan["allowed_markets"] = [value for value in form_values.getlist(f"{plan_name}_markets")]
 
