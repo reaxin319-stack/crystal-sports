@@ -133,6 +133,7 @@ def predictions():
         leagues=app.config["DATA_SERVICE"].get_configured_leagues(),
         admin_config=admin_service.get_config(),
         is_admin=is_admin_user(user),
+        no_live_matches=not (today_picks or tomorrow_picks or later_picks),
     )
 
 

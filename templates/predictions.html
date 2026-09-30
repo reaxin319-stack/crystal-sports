@@ -65,7 +65,10 @@
 {% endif %}
 
 {% if not today_picks and not tomorrow_picks and not later_picks %}
-<div class="card">No picks available right now. Please try again later.</div>
+<div class="card">
+  <strong>No live matches available right now.</strong>
+  <p>Please check back shortly as the live feed refreshes.</p>
+</div>
 {% endif %}
 
 {% if combo_slips %}

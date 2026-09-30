@@ -447,32 +447,4 @@ class DataService:
         return sample
 
     def _fallback_matches(self) -> List[Dict[str, Any]]:
-        return [
-            {
-                "home_team": "Arsenal",
-                "away_team": "Chelsea",
-                "league": "Premier League",
-                "sport": "soccer",
-                "market": "WLD",
-                "odds": {"home": 1.95, "draw": 3.40, "away": 2.20},
-                "scheduled_at": self._build_future_schedule(),
-            },
-            {
-                "home_team": "Toronto Maple Leafs",
-                "away_team": "Boston Bruins",
-                "league": "NHL",
-                "sport": "hockey",
-                "market": "Over/Under",
-                "odds": {"over": 1.85, "under": 1.95},
-                "scheduled_at": self._build_future_schedule(),
-            },
-            {
-                "home_team": "Novak Djokovic",
-                "away_team": "Carlos Alcaraz",
-                "league": "ATP",
-                "sport": "tennis",
-                "market": "Who Wins Set",
-                "odds": {"player_a": 1.80, "player_b": 2.05},
-                "scheduled_at": self._build_future_schedule(),
-            },
-        ]
+        return []
