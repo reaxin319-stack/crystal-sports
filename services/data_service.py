@@ -92,7 +92,7 @@ class DataService:
             "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard",
         ]
-        return configured or defaults
+        return list(dict.fromkeys([*configured, *defaults]))
 
     def _get_free_odd_scrapers(self) -> List[Dict[str, str]]:
         configured = os.getenv("SCRAPE_URL", "")

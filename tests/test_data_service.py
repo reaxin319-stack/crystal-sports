@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from services.data_service import DataService
 
@@ -24,6 +25,14 @@ class DataServiceScheduleTests(unittest.TestCase):
         self.assertTrue(any("basketball" in endpoint or "nba" in endpoint for endpoint in endpoints))
         self.assertTrue(any("hockey" in endpoint or "nhl" in endpoint for endpoint in endpoints))
         self.assertTrue(any("tennis" in endpoint or "atp" in endpoint for endpoint in endpoints))
+
+    def test_configured_feed_keeps_default_live_sources_as_fallbacks(self) -> None:
+        configured_url = "https://www.scorebat.com/video-api/v1/"
+        with patch.dict("os.environ", {"SPORTS_API_URL": configured_url}):
+            endpoints = DataService()._get_api_endpoints()
+
+        self.assertEqual(endpoints[0], configured_url)
+        self.assertTrue(any("site.api.espn.com" in endpoint for endpoint in endpoints))
 
     def test_thesportsdb_style_payloads_are_normalized(self) -> None:
         service = DataService()
