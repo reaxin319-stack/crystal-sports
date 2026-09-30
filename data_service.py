@@ -50,9 +50,9 @@ class DataService:
     def _get_api_endpoints(self) -> List[str]:
         configured = [item.strip() for item in os.getenv("SPORTS_API_URL", "").split(",") if item.strip()]
         defaults = [
-            "https://www.thesportsdb.com/api/v1/json/1/search_all_leagues.php?c=England",
-            "https://www.thesportsdb.com/api/v1/json/1/eventsnextleague.php?id=4328",
-            "https://www.thesportsdb.com/api/v1/json/1/last5events.php?id=133602",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard",
         ]
         return configured or defaults
 
@@ -95,6 +95,13 @@ class DataService:
         away = self._pick_first(item, ["away_team", "away", "awayTeam", "team_away", "team2", "awayName", "strAwayTeam", "side2", "away"])
         league = self._pick_first(item, ["league", "competition", "league_name", "competition_name", "tournament", "strLeague", "strCompetition", "strTournament", "competition"])
         sport_hint = self._pick_first(item, ["sport", "strSport", "sport_name", "game_sport", "competition_type"])
+
+        if not home or not away:
+            espn_home, espn_away, espn_league = self._extract_espn_teams(item)
+            home = home or espn_home
+            away = away or espn_away
+            league = league or espn_league
+
         sport = self._guess_sport(league, home, away, sport_hint)
         market = self._guess_market(item)
         odds = self._extract_odds(item)
@@ -135,12 +142,41 @@ class DataService:
         return "soccer"
 
     def _guess_market(self, item: Dict[str, Any]) -> str:
-        if any(key in item for key in ["over_odds", "under_odds", "over", "under", "strOddsOver", "strOddsUnder"]):
+        if not isinstance(item, dict):
+            return "WLD"
+
+        candidate_keys = []
+        for container in [item, item.get("odds")]:
+            if isinstance(container, dict):
+                candidate_keys.extend(str(key).lower() for key in container.keys())
+
+        if any(key in candidate_keys for key in [
+            "home", "draw", "away",
+            "home_odds", "draw_odds", "away_odds",
+            "odds_home", "odds_draw", "odds_away",
+            "stroddshome", "stroddsdraw", "stroddsaway",
+            "homeodd", "drawodd", "awayodd",
+        ]):
+            return "WLD"
+
+        if any(key in candidate_keys for key in [
+            "over", "under", "over_odds", "under_odds",
+            "overprice", "underprice",
+            "stroddsover", "stroddsunder",
+        ]):
             return "Over/Under"
-        if any(key in item for key in ["cards_over", "cards_under", "strOddsOver", "strOddsUnder"]):
+
+        if any(key in candidate_keys for key in [
+            "cards_over", "cards_under", "cardsover", "cardsunder",
+        ]):
             return "Cards"
-        if any(key in item for key in ["player_a", "player_b", "strOddsHome", "strOddsAway"]):
+
+        if any(key in candidate_keys for key in [
+            "player_a", "player_b", "playera", "playerb",
+            "player_a_odds", "player_b_odds",
+        ]):
             return "Who Wins Set"
+
         return "WLD"
 
     def _extract_odds(self, item: Dict[str, Any]) -> Dict[str, Any]:

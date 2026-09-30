@@ -20,17 +20,17 @@ Crystal Sports is a Python-based sports prediction framework for showing daily p
 
 Set one or more of these environment variables before launching the app:
 
-- `SPORTS_API_URL`: a free JSON endpoint that returns events or matches
+- `SPORTS_API_URL`: a free JSON endpoint that returns events or matches. The default free option is the ESPN scoreboard feed for English Premier League.
 - `SPORTS_API_TOKEN` or `SPORTS_API_KEY`: optional bearer or api key headers
 - `SCRAPE_URL`: a public page to scrape for match rows
 - `SCRAPE_SELECTOR`: a CSS selector for the table rows to parse
 
-A good starting point is a public sports feed that returns an `events` or `matches` array. If you provide a working endpoint, the app will populate predictions with that data automatically.
+The app includes a working default free source that returns live match data in the ESPN scoreboard format. If you provide a different endpoint, it will populate predictions from that feed automatically as long as the JSON includes `events` or `matches` plus team names and odds.
 
 Example:
 
 ```bash
-set SPORTS_API_URL=https://example.com/api/events
+set SPORTS_API_URL=https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard
 set SCRAPE_URL=https://example.com/fixtures
 set SCRAPE_SELECTOR=tr
 python app.py

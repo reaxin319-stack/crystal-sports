@@ -1,6 +1,6 @@
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from random import randint
 from typing import Any, Dict, List
 
@@ -50,9 +50,9 @@ class DataService:
     def _get_api_endpoints(self) -> List[str]:
         configured = [item.strip() for item in os.getenv("SPORTS_API_URL", "").split(",") if item.strip()]
         defaults = [
-            "https://www.thesportsdb.com/api/v1/json/1/search_all_leagues.php?c=England",
-            "https://www.thesportsdb.com/api/v1/json/1/eventsnextleague.php?id=4328",
-            "https://www.thesportsdb.com/api/v1/json/1/last5events.php?id=133602",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard",
         ]
         return configured or defaults
 
@@ -95,6 +95,13 @@ class DataService:
         away = self._pick_first(item, ["away_team", "away", "awayTeam", "team_away", "team2", "awayName", "strAwayTeam", "side2", "away"])
         league = self._pick_first(item, ["league", "competition", "league_name", "competition_name", "tournament", "strLeague", "strCompetition", "strTournament", "competition"])
         sport_hint = self._pick_first(item, ["sport", "strSport", "sport_name", "game_sport", "competition_type"])
+
+        if not home or not away:
+            espn_home, espn_away, espn_league = self._extract_espn_teams(item)
+            home = home or espn_home
+            away = away or espn_away
+            league = league or espn_league
+
         sport = self._guess_sport(league, home, away, sport_hint)
         market = self._guess_market(item)
         odds = self._extract_odds(item)
@@ -135,15 +142,140 @@ class DataService:
         return "soccer"
 
     def _guess_market(self, item: Dict[str, Any]) -> str:
-        if any(key in item for key in ["over_odds", "under_odds", "over", "under", "strOddsOver", "strOddsUnder"]):
+        if not isinstance(item, dict):
+            return "WLD"
+
+        candidate_keys = []
+        for container in [item, item.get("odds")]:
+            if isinstance(container, dict):
+                candidate_keys.extend(str(key).lower() for key in container.keys())
+
+        if any(key in candidate_keys for key in [
+            "home", "draw", "away",
+            "home_odds", "draw_odds", "away_odds",
+            "odds_home", "odds_draw", "odds_away",
+            "stroddshome", "stroddsdraw", "stroddsaway",
+            "homeodd", "drawodd", "awayodd",
+            "moneyline",
+        ]):
+            return "WLD"
+
+        if any(key in candidate_keys for key in [
+            "over", "under", "over_odds", "under_odds",
+            "overprice", "underprice",
+            "stroddsover", "stroddsunder",
+        ]):
             return "Over/Under"
-        if any(key in item for key in ["cards_over", "cards_under", "strOddsOver", "strOddsUnder"]):
+
+        if any(key in candidate_keys for key in [
+            "cards_over", "cards_under", "cardsover", "cardsunder",
+        ]):
             return "Cards"
-        if any(key in item for key in ["player_a", "player_b", "strOddsHome", "strOddsAway"]):
+
+        if any(key in candidate_keys for key in [
+            "player_a", "player_b", "playera", "playerb",
+            "player_a_odds", "player_b_odds",
+        ]):
             return "Who Wins Set"
+
         return "WLD"
 
+    def _extract_espn_teams(self, item: Dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+        competitions = item.get("competitions") if isinstance(item, dict) else None
+        if not isinstance(competitions, list):
+            return None, None, None
+
+        for competition in competitions:
+            if not isinstance(competition, dict):
+                continue
+            competitors = competition.get("competitors")
+            if not isinstance(competitors, list):
+                continue
+
+            home_team = None
+            away_team = None
+            for competitor in competitors:
+                if not isinstance(competitor, dict):
+                    continue
+                team = competitor.get("team") if isinstance(competitor.get("team"), dict) else {}
+                name = team.get("displayName") or team.get("name") or team.get("shortDisplayName")
+                home_away = competitor.get("homeAway")
+                if home_away == "home":
+                    home_team = name
+                elif home_away == "away":
+                    away_team = name
+
+            if home_team and away_team:
+                league_name = None
+                league = competition.get("league")
+                if isinstance(league, dict):
+                    league_name = league.get("name") or league.get("abbreviation")
+                return home_team, away_team, league_name
+
+        return None, None, None
+
+    def _american_to_decimal(self, value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, dict):
+            for key in ["close", "open"]:
+                if key in value and isinstance(value[key], dict):
+                    return self._american_to_decimal(value[key].get("odds"))
+            return self._american_to_decimal(value.get("odds"))
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return None
+            if cleaned.startswith("+") or cleaned.startswith("-"):
+                try:
+                    numeric = float(cleaned)
+                except ValueError:
+                    return None
+                if numeric > 0:
+                    return 1 + (numeric / 100)
+                return 1 + (100 / abs(numeric))
+            try:
+                decimal = float(cleaned)
+                return decimal if decimal > 1 else None
+            except ValueError:
+                return None
+        return None
+
+    def _extract_espn_odds(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        competitions = item.get("competitions") if isinstance(item, dict) else None
+        if not isinstance(competitions, list):
+            return {}
+
+        for competition in competitions:
+            if not isinstance(competition, dict):
+                continue
+            odd_entries = competition.get("odds")
+            if not isinstance(odd_entries, list):
+                continue
+
+            for odd_entry in odd_entries:
+                if not isinstance(odd_entry, dict):
+                    continue
+                moneyline = odd_entry.get("moneyline")
+                if not isinstance(moneyline, dict):
+                    continue
+
+                home = self._american_to_decimal(moneyline.get("home"))
+                draw = self._american_to_decimal(moneyline.get("draw"))
+                away = self._american_to_decimal(moneyline.get("away"))
+
+                if home is not None and draw is not None and away is not None:
+                    return {"home": home, "draw": draw, "away": away}
+
+        return {}
+
     def _extract_odds(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        espn_odds = self._extract_espn_odds(item)
+        if espn_odds:
+            return espn_odds
+
         odds = item.get("odds") if isinstance(item.get("odds"), dict) else {}
         if not odds:
             odds = item
@@ -200,7 +332,7 @@ class DataService:
         return None
 
     def _build_future_schedule(self) -> str:
-        future = datetime.utcnow() + timedelta(hours=4)
+        future = datetime.now(timezone.utc) + timedelta(hours=4)
         return future.replace(microsecond=0).isoformat()
 
     def _build_fallback_odds(self, home: str | None, away: str | None, item: Dict[str, Any]) -> Dict[str, Any]:
@@ -224,6 +356,8 @@ class DataService:
                 if isinstance(value, str):
                     try:
                         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        if parsed.tzinfo is None:
+                            parsed = parsed.replace(tzinfo=timezone.utc)
                         return parsed.replace(microsecond=0).isoformat()
                     except ValueError:
                         pass

@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card">
+  <h2>My Account</h2>
+  {% if message %}<p style="color:#9ae6b4">{{ message }}</p>{% endif %}
+  <p><strong>Username:</strong> {{ user.username }}</p>
+  <p><strong>Email:</strong> {{ user.email }}</p>
+  <p><strong>Plan:</strong> {{ user.plan }}</p>
+  <p><strong>Expires:</strong> {{ user.expires_at or 'N/A' }}</p>
+
+  <h3>Change Plan</h3>
+  <form method="post">
+    <label>Select plan</label><br>
+    <select name="plan">
+      <option value="free">Free</option>
+      <option value="pro">Pro</option>
+      <option value="elite">Elite</option>
+      <option value="vip">VIP</option>
+    </select>
+    <div style="margin-top:12px">
+      <button type="submit">Update plan (mock)</button>
+    </div>
+  </form>
+
+  <h3>Upgrade via Stripe (Test)</h3>
+  <form id="stripe-form">
+    <label>Pick plan</label><br>
+    <select id="stripe-plan" name="plan">
+      <option value="pro">Pro - $5.00</option>
+      <option value="elite">Elite - $15.00</option>
+      <option value="vip">VIP - $30.00</option>
+    </select>
+    <div style="margin-top:12px">
+      <button id="checkout-btn" type="button">Proceed to Checkout</button>
+    </div>
+  </form>
+  <script>
+    async function createCheckout(plan) {
+      const resp = await fetch('/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ plan })
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        alert('Checkout error: ' + text);
+        return;
+      }
+      const data = await resp.json();
+      window.location = data.checkout_url;
+    }
+    document.getElementById('checkout-btn').addEventListener('click', () => {
+      const plan = document.getElementById('stripe-plan').value;
+      createCheckout(plan);
+    });
+  </script>
+  <h3>Purchase History</h3>
+  <div>
+    {% for p in purchases %}
+      <div class="card" style="padding:8px; margin:8px 0; background:rgba(0,0,0,0.2)">
+        <div><strong>{{ p.plan }}</strong> — {{ p.amount/100 }} {{ p.currency }}</div>
+        <div style="font-size:12px; color:#cbd5e1">{{ p.created_at }}</div>
+      </div>
+    {% else %}
+      <div>No purchases yet.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

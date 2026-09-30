@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from services.data_service import DataService
 
@@ -13,7 +13,7 @@ class DataServiceScheduleTests(unittest.TestCase):
             scheduled_at = match.get("scheduled_at")
             self.assertIsNotNone(scheduled_at)
             parsed = datetime.fromisoformat(scheduled_at)
-            self.assertGreater(parsed, datetime.utcnow() + timedelta(hours=3))
+            self.assertGreater(parsed, datetime.now(timezone.utc) + timedelta(hours=3))
 
     def test_thesportsdb_style_payloads_are_normalized(self) -> None:
         service = DataService()
