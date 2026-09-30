@@ -98,6 +98,8 @@ class DataService:
         configured = os.getenv("SCRAPE_URL", "")
         base_scrapers = [
             {"url": "https://www.oddschecker.com/football/england/premier-league", "selector": "tr, .betting-table tbody tr"},
+            {"url": "https://www.oddschecker.com/hockey/nhl", "selector": "tr, .betting-table tbody tr"},
+            {"url": "https://www.oddschecker.com/ice-hockey/nhl", "selector": "tr, .betting-table tbody tr"},
             {"url": "https://www.oddschecker.com/tennis", "selector": "tr, .betting-table tbody tr"},
             {"url": "https://www.oddschecker.com/basketball/nba", "selector": "tr, .betting-table tbody tr"},
         ]

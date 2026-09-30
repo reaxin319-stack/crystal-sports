@@ -36,6 +36,20 @@ set SCRAPE_SELECTOR=tr
 python app.py
 ```
 
+## Free scraper script
+
+Run this to fetch public live odds from a few free sources and print prediction-ready JSON:
+
+```bash
+python scripts/free_scraper.py --pretty
+```
+
+You can also override the source pages:
+
+```bash
+python scripts/free_scraper.py --url https://www.oddschecker.com/hockey/nhl --pretty
+```
+
 ## Local run
 
 ```bash

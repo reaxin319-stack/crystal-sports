@@ -34,6 +34,11 @@ class DataServiceScheduleTests(unittest.TestCase):
         self.assertEqual(endpoints[0], configured_url)
         self.assertTrue(any("site.api.espn.com" in endpoint for endpoint in endpoints))
 
+    def test_free_scrapers_include_hockey_feed(self) -> None:
+        scrapers = DataService()._get_free_odd_scrapers()
+
+        self.assertTrue(any("hockey" in scraper["url"] or "nhl" in scraper["url"] for scraper in scrapers))
+
     def test_thesportsdb_style_payloads_are_normalized(self) -> None:
         service = DataService()
         payload = {
