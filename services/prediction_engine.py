@@ -150,3 +150,53 @@ class PredictionEngine:
     def _pick_best_wld(self, home, draw, away) -> str:
         values = {"home": home, "draw": draw, "away": away}
         return max(values, key=values.get)
+
+
+class MarketFavoritePredictionEngine(PredictionEngine):
+    def build_slips(self, matches: List[Dict[str, Any]], subscription: Dict[str, Any], admin_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        max_picks = subscription.get("max_odds", 3)
+        picks = []
+        for match in matches:
+            if not self._is_allowed(match, subscription, admin_config):
+                continue
+
+            pick = self._build_market_favorite_pick(match)
+            if pick:
+                picks.append(pick)
+            if len(picks) >= max_picks:
+                break
+        return picks
+
+    def _build_market_favorite_pick(self, match: Dict[str, Any]) -> Dict[str, Any] | None:
+        market = match.get("market", "WLD")
+        outcomes = {
+            "WLD": [("home", "home"), ("draw", "draw"), ("away", "away")],
+            "Over/Under": [("over", "Over"), ("under", "Under")],
+            "Cards": [("cards_over", "Over Cards"), ("cards_under", "Under Cards")],
+            "Who Wins Set": [("player_a", "Player A"), ("player_b", "Player B")],
+        }.get(market, [])
+        odds = match.get("odds", {})
+        available = []
+        for key, label in outcomes:
+            try:
+                price = float(odds.get(key))
+            except (TypeError, ValueError):
+                continue
+            if 1.0 < price < float("inf"):
+                available.append((price, label))
+
+        if not available:
+            return None
+
+        selected_odds, selection = min(available, key=lambda outcome: outcome[0])
+        return {
+            "league": match.get("league", "Unknown"),
+            "sport": match.get("sport", "soccer"),
+            "home_team": match.get("home_team"),
+            "away_team": match.get("away_team"),
+            "market": market,
+            "selection": selection,
+            "odds": selected_odds,
+            "scheduled_at": match.get("scheduled_at"),
+            "reason": "Market favorite based on the shortest available decimal odds.",
+        }

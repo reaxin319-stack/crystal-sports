@@ -15,7 +15,7 @@ from flask import Flask, redirect, render_template, request, session, url_for
 
 from services.admin_service import AdminConfigService
 from services.data_service import DataService
-from services.prediction_engine import PredictionEngine
+from services.prediction_engine import MarketFavoritePredictionEngine, PredictionEngine
 from services.subscription import SubscriptionService
 import models
 from werkzeug.security import generate_password_hash
@@ -32,6 +32,7 @@ app.secret_key = "crystal-sports-dev-secret"
 
 app.config["DATA_SERVICE"] = DataService()
 app.config["PREDICTION_ENGINE"] = PredictionEngine()
+app.config["MARKET_FAVORITE_PREDICTION_ENGINE"] = MarketFavoritePredictionEngine()
 app.config["SUBSCRIPTION_SERVICE"] = SubscriptionService()
 app.config["ADMIN_SERVICE"] = AdminConfigService()
 models.init_db()
@@ -101,6 +102,35 @@ def build_display_picks(matches, prediction_engine, subscription, admin_config, 
     return picks
 
 
+def split_display_picks(picks, now):
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+    today_picks = []
+    tomorrow_picks = []
+    later_picks = []
+
+    for pick in picks:
+        scheduled_at = pick.get("scheduled_at")
+        try:
+            scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+        except (AttributeError, TypeError, ValueError):
+            scheduled_dt = None
+
+        if scheduled_dt:
+            pick["scheduled_at"] = scheduled_dt.strftime("%Y-%m-%d %H:%M UTC")
+            display_day = resolve_display_date(scheduled_dt, now)
+            if display_day == today:
+                today_picks.append(pick)
+            elif display_day == tomorrow:
+                tomorrow_picks.append(pick)
+            else:
+                later_picks.append(pick)
+        else:
+            later_picks.append(pick)
+
+    return today_picks, tomorrow_picks, later_picks
+
+
 @app.route("/")
 def index():
     data_service = app.config["DATA_SERVICE"]
@@ -145,6 +175,13 @@ def predictions():
         admin_service.get_config(),
         now_utc,
     )
+    favorite_picks = build_display_picks(
+        matches,
+        app.config["MARKET_FAVORITE_PREDICTION_ENGINE"],
+        subscription,
+        admin_service.get_config(),
+        now_utc,
+    )
     if is_admin_user(user):
         if subscription.get("name", "").lower() == "vip":
             combo_slips = app.config["PREDICTION_ENGINE"].build_magic_combinations(matches, subscription, admin_service.get_config())
@@ -154,33 +191,8 @@ def predictions():
         combo_slips = []
 
     today = now_utc.date()
-    tomorrow = today + timedelta(days=1)
-
-    today_picks = []
-    tomorrow_picks = []
-    later_picks = []
-
-    for pick in picks:
-        scheduled_at = pick.get("scheduled_at")
-        if scheduled_at:
-            try:
-                scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
-            except ValueError:
-                scheduled_dt = None
-        else:
-            scheduled_dt = None
-
-        if scheduled_dt:
-            pick["scheduled_at"] = scheduled_dt.strftime("%Y-%m-%d %H:%M UTC")
-            display_day = resolve_display_date(scheduled_dt, now_utc)
-            if display_day == today:
-                today_picks.append(pick)
-            elif display_day == tomorrow:
-                tomorrow_picks.append(pick)
-            else:
-                later_picks.append(pick)
-        else:
-            later_picks.append(pick)
+    today_picks, tomorrow_picks, later_picks = split_display_picks(picks, now_utc)
+    favorite_today_picks, favorite_tomorrow_picks, favorite_later_picks = split_display_picks(favorite_picks, now_utc)
 
     return render_template(
         "predictions.html",
@@ -188,12 +200,15 @@ def predictions():
         today_picks=today_picks,
         tomorrow_picks=tomorrow_picks,
         later_picks=later_picks,
+        favorite_today_picks=favorite_today_picks,
+        favorite_tomorrow_picks=favorite_tomorrow_picks,
+        favorite_later_picks=favorite_later_picks,
         combo_slips=combo_slips,
         subscription=subscription,
         leagues=app.config["DATA_SERVICE"].get_configured_leagues(),
         admin_config=admin_service.get_config(),
         is_admin=is_admin_user(user),
-        no_live_matches=not (today_picks or tomorrow_picks or later_picks),
+        no_live_matches=not (today_picks or tomorrow_picks or later_picks or favorite_today_picks or favorite_tomorrow_picks or favorite_later_picks),
     )
 
 
@@ -238,20 +253,21 @@ def admin_create_user():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        username = request.form.get("username")
-        email = request.form.get("email")
+        email = request.form.get("email", "").strip().lower()
         password = request.form.get("password")
-        plan = request.form.get("plan", "free")
-        if not username or not email or not password:
-            return render_template("register.html", error="Missing fields")
+        if not email or not password:
+            return render_template("register.html", error="Email and password are required")
         # basic email validation
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
             return render_template("register.html", error="Invalid email address")
-        existing = models.get_user_by_username(username)
+        existing = models.get_user_by_email(email)
         if existing:
-            return render_template("register.html", error="Username already exists")
+            return render_template("register.html", error="Email is already registered")
+        username = f"member_{secrets.token_hex(8)}"
+        while models.get_user_by_username(username):
+            username = f"member_{secrets.token_hex(8)}"
         try:
-            user = models.create_user(username, email, password, plan)
+            user = models.create_user(username, email, password, "free")
             # send confirmation email
             token = secrets.token_urlsafe(24)
             models.set_confirm_token(user['id'], token)
@@ -267,9 +283,11 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username")
+        email = request.form.get("email", "").strip()
+        username = request.form.get("username", "").strip()
+        login_identifier = email or username
         password = request.form.get("password")
-        user = models.verify_user(username, password)
+        user = models.verify_user(login_identifier, password)
         if not user:
             return render_template("login.html", error="Invalid credentials")
         session["user_id"] = user["id"]

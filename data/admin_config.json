@@ -20,7 +20,7 @@
       "name": "Free",
       "price": "$0",
       "duration": "1 month",
-      "max_odds": 3,
+      "max_odds": 4,
       "allowed_sports": [
         "soccer",
         "hockey",
@@ -36,31 +36,54 @@
     },
     "pro": {
       "name": "Pro",
-      "price": "$10",
+      "price": "$19",
       "duration": "1 month",
       "max_odds": 5,
-      "allowed_sports": [],
-      "allowed_markets": [],
+      "allowed_sports": [
+        "soccer",
+        "hockey"
+      ],
+      "allowed_markets": [
+        "WLD",
+        "Over/Under"
+      ],
       "description": "Unlock soccer and hockey picks with 5-odds slips.",
       "stripe_price_id": ""
     },
     "elite": {
       "name": "Elite",
-      "price": "$25",
+      "price": "$39",
       "duration": "1 month",
       "max_odds": 10,
-      "allowed_sports": [],
-      "allowed_markets": [],
+      "allowed_sports": [
+        "soccer",
+        "hockey",
+        "tennis"
+      ],
+      "allowed_markets": [
+        "WLD",
+        "Over/Under",
+        "Who Wins Set"
+      ],
       "description": "Access all three sports and 10-odds slips.",
       "stripe_price_id": ""
     },
     "vip": {
       "name": "VIP",
-      "price": "$50",
+      "price": "$79",
       "duration": "1 month",
       "max_odds": 20,
-      "allowed_sports": [],
-      "allowed_markets": [],
+      "allowed_sports": [
+        "soccer",
+        "hockey",
+        "tennis"
+      ],
+      "allowed_markets": [
+        "WLD",
+        "Over/Under",
+        "Cards",
+        "Who Wins Set"
+      ],
       "description": "Unlock premium multi-sport slips and auto magic combinations.",
       "stripe_price_id": ""
     }

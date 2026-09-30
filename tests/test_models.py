@@ -7,6 +7,15 @@ import models
 
 
 class ModelDefaultsTests(unittest.TestCase):
+    def test_users_can_verify_by_email_or_existing_username(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "users.db")
+            with patch.object(models, "DB_PATH", db_path):
+                models.create_user("member_123", "person@example.com", "secure-password")
+
+                self.assertIsNotNone(models.verify_user("PERSON@EXAMPLE.COM", "secure-password"))
+                self.assertIsNotNone(models.verify_user("member_123", "secure-password"))
+
     def test_new_users_are_admin_and_use_default_password(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "users.db")
