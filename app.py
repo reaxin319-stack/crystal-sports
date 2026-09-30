@@ -61,6 +61,46 @@ def resolve_display_date(scheduled_dt: datetime, now: datetime | None = None):
     return scheduled_dt.date()
 
 
+def build_display_picks(matches, prediction_engine, subscription, admin_config, now=None):
+    now = now or datetime.now(timezone.utc)
+    matches_by_day = {}
+    for match in matches:
+        scheduled_at = match.get("scheduled_at")
+        try:
+            scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+            display_day = resolve_display_date(scheduled_dt, now)
+        except (AttributeError, TypeError, ValueError):
+            display_day = None
+        matches_by_day.setdefault(display_day, []).append(match)
+
+    picks = []
+    for daily_matches in matches_by_day.values():
+        matches_by_league = {}
+        for match in daily_matches:
+            league = match.get("league")
+            if not league or str(league).strip().casefold() in {"live league", "unknown"}:
+                league = match.get("sport", "unknown")
+            league_key = str(league).strip().casefold()
+            matches_by_league.setdefault(league_key, []).append(match)
+
+        league_picks = [
+            prediction_engine.build_slips(league_matches, subscription, admin_config)
+            for league_matches in matches_by_league.values()
+        ]
+        daily_limit = int(subscription.get("max_odds", 3) or 0)
+        daily_picks = []
+        round_index = 0
+        while len(daily_picks) < daily_limit and any(round_index < len(items) for items in league_picks):
+            for items in league_picks:
+                if round_index < len(items):
+                    daily_picks.append(items[round_index])
+                    if len(daily_picks) >= daily_limit:
+                        break
+            round_index += 1
+        picks.extend(daily_picks)
+    return picks
+
+
 @app.route("/")
 def index():
     data_service = app.config["DATA_SERVICE"]
@@ -97,17 +137,22 @@ def predictions():
         subscription = admin_service.get_plan("free")
 
     matches = app.config["DATA_SERVICE"].get_live_matches()
+    now_utc = datetime.now(timezone.utc)
+    picks = build_display_picks(
+        matches,
+        app.config["PREDICTION_ENGINE"],
+        subscription,
+        admin_service.get_config(),
+        now_utc,
+    )
     if is_admin_user(user):
-        picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
         if subscription.get("name", "").lower() == "vip":
             combo_slips = app.config["PREDICTION_ENGINE"].build_magic_combinations(matches, subscription, admin_service.get_config())
         else:
             combo_slips = []
     else:
-        picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
         combo_slips = []
 
-    now_utc = datetime.now(timezone.utc)
     today = now_utc.date()
     tomorrow = today + timedelta(days=1)
 

@@ -60,8 +60,9 @@ class DataService:
 
         return self._fallback_matches()
 
-    def _fetch_api_payloads(self) -> List[Dict[str, Any]]:
+    def _fetch_api_payloads(self, target_date=None) -> List[Dict[str, Any]]:
         payloads: List[Dict[str, Any]] = []
+        target_date = target_date or (datetime.now(timezone.utc).date() + timedelta(days=1))
         for endpoint in self._get_api_endpoints():
             try:
                 headers = self._build_headers()
@@ -69,7 +70,31 @@ class DataService:
                 response.raise_for_status()
                 data = response.json()
                 if isinstance(data, dict):
+                    is_espn_scoreboard = endpoint.startswith("https://site.api.espn.com/") and "/scoreboard" in endpoint
+                    if is_espn_scoreboard:
+                        data = self._label_espn_payload(data, endpoint)
                     payloads.append(data)
+                    if is_espn_scoreboard:
+                        events = data.get("events", [])
+                        has_target_date = any(
+                            isinstance(event, dict)
+                            and str(event.get("date", "")).startswith(target_date.isoformat())
+                            for event in events[:10]
+                        ) if isinstance(events, list) else False
+                        if not has_target_date:
+                            try:
+                                dated_response = requests.get(
+                                    endpoint,
+                                    params={"dates": target_date.strftime("%Y%m%d")},
+                                    headers=headers,
+                                    timeout=10,
+                                )
+                                dated_response.raise_for_status()
+                                dated_data = dated_response.json()
+                                if isinstance(dated_data, dict):
+                                    payloads.append(self._label_espn_payload(dated_data, endpoint))
+                            except Exception:
+                                pass
                 elif isinstance(data, list):
                     for item in data:
                         if isinstance(item, dict):
@@ -77,6 +102,33 @@ class DataService:
             except Exception:
                 continue
         return payloads
+
+    def _label_espn_payload(self, payload: Dict[str, Any], endpoint: str) -> Dict[str, Any]:
+        league_code = endpoint.rstrip("/").split("/")[-2]
+        league_names = {
+            "eng.1": "Premier League",
+            "esp.1": "La Liga",
+            "ita.1": "Serie A",
+            "usa.1": "MLS",
+            "nba": "NBA",
+            "nhl": "NHL",
+            "atp": "ATP",
+            "wta": "WTA",
+            "nfl": "NFL",
+            "mlb": "MLB",
+        }
+        source_league = league_names.get(league_code, league_code.upper())
+        events = payload.get("events")
+        if not isinstance(events, list):
+            return payload
+
+        labeled = dict(payload)
+        labeled["events"] = [
+            {**event, "_source_league": event.get("_source_league") or source_league}
+            if isinstance(event, dict) else event
+            for event in events
+        ]
+        return labeled
 
     def _get_api_endpoints(self) -> List[str]:
         configured = [item.strip() for item in os.getenv("SPORTS_API_URL", "").split(",") if item.strip()]
@@ -153,6 +205,9 @@ class DataService:
             away = away or espn_away
             league = league or espn_league
 
+        if not league or str(league).strip().casefold() in {"live league", "unknown"}:
+            league = self._pick_first(item, ["_source_league"]) or league
+
         sport = self._guess_sport(league, home, away, sport_hint)
         market = self._guess_market(item)
         odds = self._extract_odds(item)
@@ -163,6 +218,8 @@ class DataService:
             away = self._pick_first(away, ["name", "away_team", "team_name", "title"])
         if isinstance(league, dict):
             league = self._pick_first(league, ["name", "league", "competition", "title"])
+        if not league or str(league).strip().casefold() in {"live league", "unknown"}:
+            league = self._pick_first(item, ["_source_league"]) or league
 
         if not home or not away:
             return None

@@ -1,8 +1,9 @@
 import unittest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from datetime import date, datetime, timedelta, timezone
+from unittest.mock import Mock, patch
 
-from app import resolve_display_date
+from app import build_display_picks, resolve_display_date
+from services.prediction_engine import PredictionEngine
 from services.data_service import DataService
 
 
@@ -35,6 +36,49 @@ class DataServiceScheduleTests(unittest.TestCase):
         self.assertEqual(endpoints[0], configured_url)
         self.assertTrue(any("site.api.espn.com" in endpoint for endpoint in endpoints))
 
+    def test_espn_requests_target_date_when_default_feed_omits_it(self) -> None:
+        endpoint = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard"
+        default_response = Mock()
+        default_response.json.return_value = {"events": [{"date": "2026-10-10T18:00Z"}]}
+        dated_response = Mock()
+        dated_response.json.return_value = {"events": [{"date": "2026-10-01T23:00Z"}]}
+
+        with patch.object(DataService, "_get_api_endpoints", return_value=[endpoint]), patch(
+            "services.data_service.requests.get",
+            side_effect=[default_response, dated_response],
+        ) as get:
+            payloads = DataService()._fetch_api_payloads(date(2026, 10, 1))
+
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(get.call_args_list[1].kwargs["params"], {"dates": "20261001"})
+        self.assertEqual(payloads[1]["events"][0]["_source_league"], "NHL")
+
+    def test_espn_source_league_sets_sport_during_normalization(self) -> None:
+        service = DataService()
+        payload = service._label_espn_payload(
+            {
+                "events": [
+                    {
+                        "date": "2026-10-01T23:00:00Z",
+                        "competitions": [
+                            {
+                                "competitors": [
+                                    {"homeAway": "home", "team": {"displayName": "Buffalo Sabres"}},
+                                    {"homeAway": "away", "team": {"displayName": "Columbus Blue Jackets"}},
+                                ]
+                            }
+                        ],
+                    }
+                ]
+            },
+            "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
+        )
+
+        match = service._normalize_payload(payload)[0]
+
+        self.assertEqual(match["league"], "NHL")
+        self.assertEqual(match["sport"], "hockey")
+
     def test_free_scrapers_include_hockey_feed(self) -> None:
         scrapers = DataService()._get_free_odd_scrapers()
 
@@ -45,6 +89,72 @@ class DataServiceScheduleTests(unittest.TestCase):
         scheduled = datetime(2026, 9, 30, 23, 30, tzinfo=timezone.utc)
 
         self.assertEqual(resolve_display_date(scheduled, now), datetime(2026, 10, 1, 0, 0, tzinfo=timezone.utc).date())
+
+    def test_free_pick_limit_is_applied_per_display_date(self) -> None:
+        now = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
+        matches = [
+            {
+                "home_team": "Later Home",
+                "away_team": "Later Away",
+                "sport": "soccer",
+                "market": "WLD",
+                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "scheduled_at": "2026-10-02T18:00:00+00:00",
+            }
+        ]
+        for index in range(3):
+            matches.append({
+                "home_team": f"Tomorrow Home {index}",
+                "away_team": f"Tomorrow Away {index}",
+                "sport": "soccer",
+                "market": "WLD",
+                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "scheduled_at": "2026-10-01T18:00:00+00:00",
+            })
+
+        picks = build_display_picks(
+            matches,
+            PredictionEngine(),
+            {"max_odds": 3, "allowed_sports": ["soccer"], "allowed_markets": ["WLD"]},
+            {"allowed_markets": {"soccer": ["WLD"]}},
+            now,
+        )
+
+        self.assertEqual(sum(pick["scheduled_at"].startswith("2026-10-01") for pick in picks), 3)
+
+    def test_free_picks_include_multiple_fixture_leagues(self) -> None:
+        now = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
+        matches = []
+        for index in range(3):
+            matches.append({
+                "home_team": f"Soccer Home {index}",
+                "away_team": f"Soccer Away {index}",
+                "league": "League A",
+                "sport": "soccer",
+                "market": "WLD",
+                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "scheduled_at": "2026-10-01T18:00:00+00:00",
+            })
+        for index in range(2):
+            matches.append({
+                "home_team": f"Hockey Home {index}",
+                "away_team": f"Hockey Away {index}",
+                "league": "League B",
+                "sport": "hockey",
+                "market": "WLD",
+                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "scheduled_at": "2026-10-01T19:00:00+00:00",
+            })
+
+        picks = build_display_picks(
+            matches,
+            PredictionEngine(),
+            {"max_odds": 3, "allowed_sports": ["soccer", "hockey"], "allowed_markets": ["WLD"]},
+            {"allowed_markets": {"soccer": ["WLD"], "hockey": ["WLD"]}},
+            now,
+        )
+
+        self.assertEqual({pick["league"] for pick in picks}, {"League A", "League B"})
 
     def test_thesportsdb_style_payloads_are_normalized(self) -> None:
         service = DataService()
