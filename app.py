@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import sys
 from pathlib import Path
@@ -48,6 +48,19 @@ def is_admin_user(user: dict | None) -> bool:
     return bool(user and user.get("is_admin"))
 
 
+def resolve_display_date(scheduled_dt: datetime, now: datetime | None = None):
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if scheduled_dt.tzinfo is None:
+        scheduled_dt = scheduled_dt.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    if now.hour >= 21 and scheduled_dt.date() == now.date() and scheduled_dt.hour >= 21:
+        return (now.date() + timedelta(days=1))
+    return scheduled_dt.date()
+
+
 @app.route("/")
 def index():
     data_service = app.config["DATA_SERVICE"]
@@ -94,7 +107,8 @@ def predictions():
         picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
         combo_slips = []
 
-    today = datetime.utcnow().date()
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.date()
     tomorrow = today + timedelta(days=1)
 
     today_picks = []
@@ -113,9 +127,10 @@ def predictions():
 
         if scheduled_dt:
             pick["scheduled_at"] = scheduled_dt.strftime("%Y-%m-%d %H:%M UTC")
-            if scheduled_dt.date() == today:
+            display_day = resolve_display_date(scheduled_dt, now_utc)
+            if display_day == today:
                 today_picks.append(pick)
-            elif scheduled_dt.date() == tomorrow:
+            elif display_day == tomorrow:
                 tomorrow_picks.append(pick)
             else:
                 later_picks.append(pick)

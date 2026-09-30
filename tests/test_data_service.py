@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from app import resolve_display_date
 from services.data_service import DataService
 
 
@@ -38,6 +39,12 @@ class DataServiceScheduleTests(unittest.TestCase):
         scrapers = DataService()._get_free_odd_scrapers()
 
         self.assertTrue(any("hockey" in scraper["url"] or "nhl" in scraper["url"] for scraper in scrapers))
+
+    def test_tomorrow_matches_appear_after_9pm_cutoff(self) -> None:
+        now = datetime(2026, 9, 30, 21, 0, tzinfo=timezone.utc)
+        scheduled = datetime(2026, 9, 30, 23, 30, tzinfo=timezone.utc)
+
+        self.assertEqual(resolve_display_date(scheduled, now), datetime(2026, 10, 1, 0, 0, tzinfo=timezone.utc).date())
 
     def test_thesportsdb_style_payloads_are_normalized(self) -> None:
         service = DataService()
