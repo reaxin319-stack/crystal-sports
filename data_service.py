@@ -19,10 +19,29 @@ class DataService:
         return self.leagues
 
     def get_live_matches(self) -> List[Dict[str, Any]]:
+        all_matches: List[Dict[str, Any]] = []
         for payload in self._fetch_api_payloads():
             matches = self._normalize_payload(payload)
             if matches:
-                return matches
+                all_matches.extend(matches)
+
+        now = datetime.now(timezone.utc)
+        future_matches: List[Dict[str, Any]] = []
+        for match in all_matches:
+            scheduled = match.get("scheduled_at")
+            if not scheduled:
+                continue
+            try:
+                scheduled_dt = datetime.fromisoformat(scheduled.replace("Z", "+00:00"))
+                if scheduled_dt.tzinfo is None:
+                    scheduled_dt = scheduled_dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if scheduled_dt > now + timedelta(hours=3):
+                future_matches.append(match)
+
+        if future_matches:
+            return future_matches
 
         try:
             scraped = self._scrape_matches()
@@ -43,6 +62,10 @@ class DataService:
                 data = response.json()
                 if isinstance(data, dict):
                     payloads.append(data)
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict):
+                            payloads.append(item)
             except Exception:
                 continue
         return payloads
@@ -53,6 +76,13 @@ class DataService:
             "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/tennis/wta/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard",
         ]
         return configured or defaults
 

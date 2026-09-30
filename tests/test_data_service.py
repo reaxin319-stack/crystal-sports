@@ -15,6 +15,16 @@ class DataServiceScheduleTests(unittest.TestCase):
             parsed = datetime.fromisoformat(scheduled_at)
             self.assertGreater(parsed, datetime.now(timezone.utc) + timedelta(hours=3))
 
+    def test_default_live_sources_cover_multiple_free_feeds(self) -> None:
+        service = DataService()
+        endpoints = service._get_api_endpoints()
+
+        self.assertGreaterEqual(len(endpoints), 6)
+        self.assertTrue(any("soccer" in endpoint for endpoint in endpoints))
+        self.assertTrue(any("basketball" in endpoint or "nba" in endpoint for endpoint in endpoints))
+        self.assertTrue(any("hockey" in endpoint or "nhl" in endpoint for endpoint in endpoints))
+        self.assertTrue(any("tennis" in endpoint or "atp" in endpoint for endpoint in endpoints))
+
     def test_thesportsdb_style_payloads_are_normalized(self) -> None:
         service = DataService()
         payload = {

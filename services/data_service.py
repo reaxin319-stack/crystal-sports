@@ -19,10 +19,37 @@ class DataService:
         return self.leagues
 
     def get_live_matches(self) -> List[Dict[str, Any]]:
+        all_matches: List[Dict[str, Any]] = []
         for payload in self._fetch_api_payloads():
             matches = self._normalize_payload(payload)
             if matches:
-                return matches
+                all_matches.extend(matches)
+
+        now = datetime.now(timezone.utc)
+        future_matches: List[Dict[str, Any]] = []
+        for match in all_matches:
+            scheduled = match.get("scheduled_at")
+            if not scheduled:
+                continue
+            try:
+                scheduled_dt = datetime.fromisoformat(scheduled.replace("Z", "+00:00"))
+                if scheduled_dt.tzinfo is None:
+                    scheduled_dt = scheduled_dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if scheduled_dt > now + timedelta(hours=3):
+                future_matches.append(match)
+
+        if future_matches:
+            return future_matches
+
+        for scraper in self._get_free_odd_scrapers():
+            try:
+                scraped = self._scrape_matches_from_url(scraper)
+                if scraped:
+                    return scraped
+            except Exception:
+                continue
 
         try:
             scraped = self._scrape_matches()
@@ -43,6 +70,10 @@ class DataService:
                 data = response.json()
                 if isinstance(data, dict):
                     payloads.append(data)
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict):
+                            payloads.append(item)
             except Exception:
                 continue
         return payloads
@@ -53,8 +84,26 @@ class DataService:
             "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/tennis/wta/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard",
         ]
         return configured or defaults
+
+    def _get_free_odd_scrapers(self) -> List[Dict[str, str]]:
+        configured = os.getenv("SCRAPE_URL", "")
+        base_scrapers = [
+            {"url": "https://www.oddschecker.com/football/england/premier-league", "selector": "tr, .betting-table tbody tr"},
+            {"url": "https://www.oddschecker.com/tennis", "selector": "tr, .betting-table tbody tr"},
+            {"url": "https://www.oddschecker.com/basketball/nba", "selector": "tr, .betting-table tbody tr"},
+        ]
+        if configured:
+            return [{"url": configured, "selector": os.getenv("SCRAPE_SELECTOR", "tr")}] + base_scrapers
+        return base_scrapers
 
     def _build_headers(self) -> Dict[str, str]:
         headers: Dict[str, str] = {"User-Agent": "Mozilla/5.0"}
@@ -382,15 +431,16 @@ class DataService:
                 pass
         return None
 
-    def _scrape_matches(self) -> List[Dict[str, Any]]:
-        url = os.getenv("SCRAPE_URL", "")
+    def _scrape_matches_from_url(self, scraper: Dict[str, str]) -> List[Dict[str, Any]]:
+        url = scraper.get("url", "")
+        selector = scraper.get("selector", "tr")
         if not url:
             return []
 
         response = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
-        rows = soup.select(os.getenv("SCRAPE_SELECTOR", "tr"))
+        rows = soup.select(selector)
 
         scraped: List[Dict[str, Any]] = []
         for row in rows[:8]:
@@ -417,6 +467,12 @@ class DataService:
                 )
 
         return scraped
+
+    def _scrape_matches(self) -> List[Dict[str, Any]]:
+        configured = os.getenv("SCRAPE_URL", "")
+        if not configured:
+            return []
+        return self._scrape_matches_from_url({"url": configured, "selector": os.getenv("SCRAPE_SELECTOR", "tr")})
 
     def _parse_scraped_odds(self, text: str) -> Dict[str, Any]:
         if not text:
