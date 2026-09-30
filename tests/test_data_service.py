@@ -90,6 +90,13 @@ class DataServiceScheduleTests(unittest.TestCase):
 
         self.assertEqual(resolve_display_date(scheduled, now), datetime(2026, 10, 1, 0, 0, tzinfo=timezone.utc).date())
 
+    def test_upcoming_match_filter_keeps_tomorrow_games_after_9pm(self) -> None:
+        service = DataService()
+        now = datetime(2026, 9, 30, 21, 0, tzinfo=timezone.utc)
+
+        self.assertTrue(service._is_upcoming_match("2026-10-01T00:30:00+00:00", now))
+        self.assertFalse(service._is_upcoming_match("2026-09-29T23:00:00+00:00", now))
+
     def test_free_pick_limit_is_applied_per_display_date(self) -> None:
         now = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
         matches = [

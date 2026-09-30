@@ -28,16 +28,7 @@ class DataService:
         now = datetime.now(timezone.utc)
         future_matches: List[Dict[str, Any]] = []
         for match in all_matches:
-            scheduled = match.get("scheduled_at")
-            if not scheduled:
-                continue
-            try:
-                scheduled_dt = datetime.fromisoformat(scheduled.replace("Z", "+00:00"))
-                if scheduled_dt.tzinfo is None:
-                    scheduled_dt = scheduled_dt.replace(tzinfo=timezone.utc)
-            except ValueError:
-                continue
-            if scheduled_dt > now + timedelta(hours=3):
+            if self._is_upcoming_match(match.get("scheduled_at"), now):
                 future_matches.append(match)
 
         if future_matches:
@@ -59,6 +50,21 @@ class DataService:
             pass
 
         return self._fallback_matches()
+
+    def _is_upcoming_match(self, scheduled_at: str | None, now: datetime | None = None) -> bool:
+        if not scheduled_at:
+            return False
+
+        now = now or datetime.now(timezone.utc)
+        try:
+            scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        if scheduled_dt.tzinfo is None:
+            scheduled_dt = scheduled_dt.replace(tzinfo=timezone.utc)
+
+        return scheduled_dt >= now - timedelta(hours=3)
 
     def _fetch_api_payloads(self, target_date=None) -> List[Dict[str, Any]]:
         payloads: List[Dict[str, Any]] = []
