@@ -224,7 +224,10 @@ def register():
             return render_template("register.html", error="Could not create account: %s" % str(e))
         session["user_id"] = user["id"]
         return redirect(url_for("predictions"))
-    return render_template("register.html")
+    selected_plan = request.args.get("plan", "free")
+    if selected_plan not in {"free", "pro", "elite", "vip"}:
+        selected_plan = "free"
+    return render_template("register.html", selected_plan=selected_plan)
 
 
 @app.route("/login", methods=["GET", "POST"])
