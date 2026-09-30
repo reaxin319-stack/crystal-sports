@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import sys
 from pathlib import Path
@@ -16,7 +16,7 @@ from flask import Flask, redirect, render_template, request, session, url_for
 from services.admin_service import AdminConfigService
 from services.data_service import DataService
 from services.daily_picks import DailyPickService
-from services.prediction_engine import PredictionEngine
+from services.prediction_engine import MarketFavoritePredictionEngine, PredictionEngine
 from services.subscription import SubscriptionService
 import models
 from werkzeug.security import generate_password_hash
@@ -34,6 +34,7 @@ app.secret_key = "crystal-sports-dev-secret"
 app.config["DATA_SERVICE"] = DataService()
 app.config["DAILY_PICK_SERVICE"] = DailyPickService()
 app.config["PREDICTION_ENGINE"] = PredictionEngine()
+app.config["MARKET_FAVORITE_PREDICTION_ENGINE"] = MarketFavoritePredictionEngine()
 app.config["SUBSCRIPTION_SERVICE"] = SubscriptionService()
 app.config["ADMIN_SERVICE"] = AdminConfigService()
 models.init_db()
@@ -48,6 +49,88 @@ def current_user() -> dict | None:
 
 def is_admin_user(user: dict | None) -> bool:
     return bool(user and user.get("is_admin"))
+
+
+def resolve_display_date(scheduled_dt: datetime, now: datetime | None = None):
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if scheduled_dt.tzinfo is None:
+        scheduled_dt = scheduled_dt.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    if now.hour >= 21 and scheduled_dt.date() == now.date() and scheduled_dt.hour >= 21:
+        return (now.date() + timedelta(days=1))
+    return scheduled_dt.date()
+
+
+def build_display_picks(matches, prediction_engine, subscription, admin_config, now=None):
+    now = now or datetime.now(timezone.utc)
+    matches_by_day = {}
+    for match in matches:
+        scheduled_at = match.get("scheduled_at")
+        try:
+            scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+            display_day = resolve_display_date(scheduled_dt, now)
+        except (AttributeError, TypeError, ValueError):
+            display_day = None
+        matches_by_day.setdefault(display_day, []).append(match)
+
+    picks = []
+    for daily_matches in matches_by_day.values():
+        matches_by_league = {}
+        for match in daily_matches:
+            league = match.get("league")
+            if not league or str(league).strip().casefold() in {"live league", "unknown"}:
+                league = match.get("sport", "unknown")
+            league_key = str(league).strip().casefold()
+            matches_by_league.setdefault(league_key, []).append(match)
+
+        league_picks = [
+            prediction_engine.build_slips(league_matches, subscription, admin_config)
+            for league_matches in matches_by_league.values()
+        ]
+        daily_limit = int(subscription.get("max_odds", 3) or 0)
+        daily_picks = []
+        round_index = 0
+        while len(daily_picks) < daily_limit and any(round_index < len(items) for items in league_picks):
+            for items in league_picks:
+                if round_index < len(items):
+                    daily_picks.append(items[round_index])
+                    if len(daily_picks) >= daily_limit:
+                        break
+            round_index += 1
+        picks.extend(daily_picks)
+    return picks
+
+
+def split_display_picks(picks, now):
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+    today_picks = []
+    tomorrow_picks = []
+    later_picks = []
+
+    for pick in picks:
+        scheduled_at = pick.get("scheduled_at")
+        try:
+            scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+        except (AttributeError, TypeError, ValueError):
+            scheduled_dt = None
+
+        if scheduled_dt:
+            pick["scheduled_at"] = scheduled_dt.strftime("%Y-%m-%d %H:%M UTC")
+            display_day = resolve_display_date(scheduled_dt, now)
+            if display_day == today:
+                today_picks.append(pick)
+            elif display_day == tomorrow:
+                tomorrow_picks.append(pick)
+            else:
+                later_picks.append(pick)
+        else:
+            later_picks.append(pick)
+
+    return today_picks, tomorrow_picks, later_picks
 
 
 @app.route("/")
@@ -86,43 +169,32 @@ def predictions():
         subscription = admin_service.get_plan("free")
 
     matches = app.config["DAILY_PICK_SERVICE"].get_matches(app.config["DATA_SERVICE"])
+    now_utc = datetime.now(timezone.utc)
+    picks = build_display_picks(
+        matches,
+        app.config["PREDICTION_ENGINE"],
+        subscription,
+        admin_service.get_config(),
+        now_utc,
+    )
+    favorite_picks = build_display_picks(
+        matches,
+        app.config["MARKET_FAVORITE_PREDICTION_ENGINE"],
+        subscription,
+        admin_service.get_config(),
+        now_utc,
+    )
     if is_admin_user(user):
-        picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
         if subscription.get("name", "").lower() == "vip":
             combo_slips = app.config["PREDICTION_ENGINE"].build_magic_combinations(matches, subscription, admin_service.get_config())
         else:
             combo_slips = []
     else:
-        picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
         combo_slips = []
 
-    today = datetime.utcnow().date()
-    tomorrow = today + timedelta(days=1)
-
-    today_picks = []
-    tomorrow_picks = []
-    later_picks = []
-
-    for pick in picks:
-        scheduled_at = pick.get("scheduled_at")
-        if scheduled_at:
-            try:
-                scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
-            except ValueError:
-                scheduled_dt = None
-        else:
-            scheduled_dt = None
-
-        if scheduled_dt:
-            pick["scheduled_at"] = scheduled_dt.strftime("%Y-%m-%d %H:%M UTC")
-            if scheduled_dt.date() == today:
-                today_picks.append(pick)
-            elif scheduled_dt.date() == tomorrow:
-                tomorrow_picks.append(pick)
-            else:
-                later_picks.append(pick)
-        else:
-            later_picks.append(pick)
+    today = now_utc.date()
+    today_picks, tomorrow_picks, later_picks = split_display_picks(picks, now_utc)
+    favorite_today_picks, favorite_tomorrow_picks, favorite_later_picks = split_display_picks(favorite_picks, now_utc)
 
     return render_template(
         "predictions.html",
@@ -130,12 +202,15 @@ def predictions():
         today_picks=today_picks,
         tomorrow_picks=tomorrow_picks,
         later_picks=later_picks,
+        favorite_today_picks=favorite_today_picks,
+        favorite_tomorrow_picks=favorite_tomorrow_picks,
+        favorite_later_picks=favorite_later_picks,
         combo_slips=combo_slips,
         subscription=subscription,
         leagues=app.config["DATA_SERVICE"].get_configured_leagues(),
         admin_config=admin_service.get_config(),
         is_admin=is_admin_user(user),
-        no_live_matches=not (today_picks or tomorrow_picks or later_picks),
+        no_live_matches=not (today_picks or tomorrow_picks or later_picks or favorite_today_picks or favorite_tomorrow_picks or favorite_later_picks),
     )
 
 
@@ -201,20 +276,24 @@ def admin_create_user():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        username = request.form.get("username")
-        email = request.form.get("email")
+        email = request.form.get("email", "").strip().lower()
         password = request.form.get("password")
-        plan = request.form.get("plan", "free")
-        if not username or not email or not password:
-            return render_template("register.html", error="Missing fields")
+        selected_plan = request.form.get("plan", "free")
+        if selected_plan not in {"free", "pro", "elite", "vip"}:
+            selected_plan = "free"
+        if not email or not password:
+            return render_template("register.html", error="Email and password are required", selected_plan=selected_plan)
         # basic email validation
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-            return render_template("register.html", error="Invalid email address")
-        existing = models.get_user_by_username(username)
+            return render_template("register.html", error="Invalid email address", selected_plan=selected_plan)
+        existing = models.get_user_by_email(email)
         if existing:
-            return render_template("register.html", error="Username already exists")
+            return render_template("register.html", error="Email is already registered", selected_plan=selected_plan)
+        username = f"member_{secrets.token_hex(8)}"
+        while models.get_user_by_username(username):
+            username = f"member_{secrets.token_hex(8)}"
         try:
-            user = models.create_user(username, email, password, plan)
+            user = models.create_user(username, email, password, selected_plan)
             # send confirmation email
             token = secrets.token_urlsafe(24)
             models.set_confirm_token(user['id'], token)
@@ -233,9 +312,11 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username")
+        email = request.form.get("email", "").strip()
+        username = request.form.get("username", "").strip()
+        login_identifier = email or username
         password = request.form.get("password")
-        user = models.verify_user(username, password)
+        user = models.verify_user(login_identifier, password)
         if not user:
             return render_template("login.html", error="Invalid credentials")
         session["user_id"] = user["id"]

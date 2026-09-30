@@ -236,6 +236,18 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     return dict(row)
 
 
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    init_db()
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE lower(email) = lower(?)", (email,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return dict(row)
+
+
 def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     init_db()
     conn = get_conn()
@@ -248,8 +260,8 @@ def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     return dict(row)
 
 
-def verify_user(username: str, password: str) -> Optional[Dict[str, Any]]:
-    user = get_user_by_username(username)
+def verify_user(identifier: str, password: str) -> Optional[Dict[str, Any]]:
+    user = get_user_by_email(identifier) if "@" in identifier else get_user_by_username(identifier)
     if not user:
         return None
     if check_password_hash(user["password_hash"], password):

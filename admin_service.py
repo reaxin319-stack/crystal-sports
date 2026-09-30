@@ -37,11 +37,11 @@ class AdminConfigService:
                     "name": "Free",
                     "price": "$0",
                     "duration": "1 month",
-                    "max_odds": 3,
+                    "max_odds": 4,
                     "allowed_sports": ["soccer", "hockey", "tennis"],
                     "allowed_markets": ["WLD", "Over/Under", "Who Wins Set"],
                     "description": "View live soccer, hockey, and tennis picks for one month.",
-                        "stripe_price_id": "",
+                    "stripe_price_id": "",
                 },
                 "pro": {
                     "name": "Pro",
@@ -51,7 +51,7 @@ class AdminConfigService:
                     "allowed_sports": ["soccer", "hockey"],
                     "allowed_markets": ["WLD", "Over/Under"],
                     "description": "Unlock soccer and hockey picks with 5-odds slips.",
-                        "stripe_price_id": "",
+                    "stripe_price_id": "",
                 },
                 "elite": {
                     "name": "Elite",
@@ -61,7 +61,7 @@ class AdminConfigService:
                     "allowed_sports": ["soccer", "hockey", "tennis"],
                     "allowed_markets": ["WLD", "Over/Under", "Who Wins Set"],
                     "description": "Access all three sports and 10-odds slips.",
-                        "stripe_price_id": "",
+                    "stripe_price_id": "",
                 },
                 "vip": {
                     "name": "VIP",
@@ -71,7 +71,7 @@ class AdminConfigService:
                     "allowed_sports": ["soccer", "hockey", "tennis"],
                     "allowed_markets": ["WLD", "Over/Under", "Cards", "Who Wins Set"],
                     "description": "Unlock premium multi-sport slips and auto magic combinations.",
-                        "stripe_price_id": "",
+                    "stripe_price_id": "",
                 },
             },
         }
@@ -81,10 +81,34 @@ class AdminConfigService:
         merged = default.copy()
         merged.update(config)
         merged["plans"] = {**default["plans"], **config.get("plans", {})}
+
         for plan_name, plan_value in merged["plans"].items():
-            if isinstance(plan_value, dict):
-                default_plan = default["plans"].get(plan_name, {})
-                merged["plans"][plan_name] = {**default_plan, **plan_value}
+            if not isinstance(plan_value, dict):
+                continue
+
+            default_plan = default["plans"].get(plan_name, {})
+            merged_plan = {**default_plan, **plan_value}
+
+            for key in ("allowed_sports", "allowed_markets"):
+                current = merged_plan.get(key)
+                if not current:
+                    merged_plan[key] = list(default_plan.get(key, []))
+
+            max_odds = merged_plan.get("max_odds")
+            try:
+                max_odds_value = int(max_odds or default_plan.get("max_odds", 0) or 0)
+            except (TypeError, ValueError):
+                max_odds_value = int(default_plan.get("max_odds", 0) or 0)
+
+            if plan_name == "free":
+                merged_plan["max_odds"] = max(4, max_odds_value)
+            elif max_odds_value <= 0:
+                merged_plan["max_odds"] = int(default_plan.get("max_odds", 3) or 3)
+            else:
+                merged_plan["max_odds"] = max_odds_value
+
+            merged["plans"][plan_name] = merged_plan
+
         merged["allowed_markets"] = {**default["allowed_markets"], **config.get("allowed_markets", {})}
         return merged
 
