@@ -15,6 +15,7 @@ from flask import Flask, redirect, render_template, request, session, url_for
 
 from services.admin_service import AdminConfigService
 from services.data_service import DataService
+from services.daily_picks import DailyPickService
 from services.prediction_engine import PredictionEngine
 from services.subscription import SubscriptionService
 import models
@@ -31,6 +32,7 @@ app = Flask(__name__)
 app.secret_key = "crystal-sports-dev-secret"
 
 app.config["DATA_SERVICE"] = DataService()
+app.config["DAILY_PICK_SERVICE"] = DailyPickService()
 app.config["PREDICTION_ENGINE"] = PredictionEngine()
 app.config["SUBSCRIPTION_SERVICE"] = SubscriptionService()
 app.config["ADMIN_SERVICE"] = AdminConfigService()
@@ -83,7 +85,7 @@ def predictions():
         plan_name = "free"
         subscription = admin_service.get_plan("free")
 
-    matches = app.config["DATA_SERVICE"].get_live_matches()
+    matches = app.config["DAILY_PICK_SERVICE"].get_matches(app.config["DATA_SERVICE"])
     if is_admin_user(user):
         picks = app.config["PREDICTION_ENGINE"].build_slips(matches, subscription, admin_service.get_config())
         if subscription.get("name", "").lower() == "vip":
@@ -140,8 +142,10 @@ def predictions():
 @app.route("/admin", methods=["GET", "POST"])
 def admin_panel():
     user = current_user()
+    if user is None:
+        return redirect(url_for("login", next=url_for("admin_panel")))
     if not is_admin_user(user):
-        return redirect(url_for("predictions"))
+        return redirect(url_for("index"))
 
     admin_service = app.config["ADMIN_SERVICE"]
     if request.method == "POST":
@@ -152,7 +156,26 @@ def admin_panel():
             if target_user:
                 models.update_subscription(target_user["id"], target_plan)
         admin_service.update_from_form(request)
-    return render_template("admin.html", admin_config=admin_service.get_config(), sports=admin_service.get_available_sports())
+    return render_template(
+        "admin.html",
+        admin_config=admin_service.get_config(),
+        sports=admin_service.get_available_sports(),
+        markets=admin_service.get_all_markets(),
+        daily_pick_status=app.config["DAILY_PICK_SERVICE"].status(),
+        generated=request.args.get("generated") == "1",
+    )
+
+
+@app.route("/admin/generate-picks", methods=["POST"])
+def generate_daily_picks():
+    user = current_user()
+    if user is None:
+        return redirect(url_for("login", next=url_for("admin_panel")))
+    if not is_admin_user(user):
+        return redirect(url_for("admin_panel"))
+
+    app.config["DAILY_PICK_SERVICE"].refresh(app.config["DATA_SERVICE"])
+    return redirect(url_for("admin_panel", generated="1"))
 
 
 @app.route("/admin/create-user", methods=["GET", "POST"])
@@ -167,9 +190,9 @@ def admin_create_user():
         password = request.form.get("password", "").strip()
         plan = request.form.get("plan", "free")
         if not username or not email:
-            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Username and email are required")
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), markets=app.config["ADMIN_SERVICE"].get_all_markets(), error="Username and email are required")
         if models.get_user_by_username(username):
-            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Username already exists")
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), markets=app.config["ADMIN_SERVICE"].get_all_markets(), error="Username already exists")
         models.create_user(username, email, password or models.DEFAULT_ADMIN_PASSWORD, plan)
         return redirect(url_for("admin_panel"))
     return redirect(url_for("admin_panel"))

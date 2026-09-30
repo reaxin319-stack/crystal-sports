@@ -16,6 +16,10 @@ Crystal Sports is a Python-based sports prediction framework for showing daily p
 - Live data support from a free API endpoint or a scraped public page
 - Graceful fallback to demo data when no live source is available
 
+## Automatic daily picks
+
+The first visit to the predictions page each UTC day automatically generates that day's shared match set. The set is reused for subsequent requests in the running app, while subscription plans still control which picks each user can see. An administrator can regenerate the current day's set from the Admin Control Panel when the live feed changes.
+
 ## Live data setup
 
 Set one or more of these environment variables before launching the app:

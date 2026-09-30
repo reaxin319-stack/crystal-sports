@@ -6,6 +6,21 @@
 </div>
 
 <div class="card">
+  <h3>Daily Picks</h3>
+  {% if generated %}
+    <p style="color:#9ae6b4">Today's picks were generated successfully.</p>
+  {% endif %}
+  {% if daily_pick_status.date %}
+    <p>Generated for {{ daily_pick_status.date }}: {{ daily_pick_status.match_count }} matches.</p>
+  {% else %}
+    <p>Today's picks will be generated automatically when the predictions page is opened.</p>
+  {% endif %}
+  <form method="post" action="/admin/generate-picks">
+    <button type="submit">Generate today's picks now</button>
+  </form>
+</div>
+
+<div class="card">
   <h3>Create New User</h3>
   <form method="post" action="/admin/create-user">
     <label>Username</label><br>
@@ -58,8 +73,8 @@
     {% for sport in sports %}
     <div>
       <strong>{{ sport.name }}</strong><br>
-      {% for market in admin_config.allowed_markets.get(sport.key, []) %}
-      <label><input type="checkbox" name="markets_{{ sport.key }}" value="{{ market }}" checked> {{ market }}</label>
+      {% for market in markets %}
+      <label><input type="checkbox" name="markets_{{ sport.key }}" value="{{ market }}" {% if market in admin_config.allowed_markets.get(sport.key, []) %}checked{% endif %}> {{ market }}</label>
       {% endfor %}
     </div>
     {% endfor %}
@@ -76,13 +91,12 @@
       <input type="text" name="{{ plan_name }}_duration" value="{{ plan.duration }}" placeholder="duration"><br>
       <input type="number" name="{{ plan_name }}_max_odds" value="{{ plan.max_odds }}" placeholder="max odds"><br>
       <textarea name="{{ plan_name }}_description">{{ plan.description }}</textarea><br>
-      <label><input type="checkbox" name="{{ plan_name }}_sports" value="soccer" {% if 'soccer' in plan.allowed_sports %}checked{% endif %}> Soccer</label>
-      <label><input type="checkbox" name="{{ plan_name }}_sports" value="hockey" {% if 'hockey' in plan.allowed_sports %}checked{% endif %}> Hockey</label>
-      <label><input type="checkbox" name="{{ plan_name }}_sports" value="tennis" {% if 'tennis' in plan.allowed_sports %}checked{% endif %}> Tennis</label><br>
-      <label><input type="checkbox" name="{{ plan_name }}_markets" value="WLD" {% if 'WLD' in plan.allowed_markets %}checked{% endif %}> WLD</label>
-      <label><input type="checkbox" name="{{ plan_name }}_markets" value="Over/Under" {% if 'Over/Under' in plan.allowed_markets %}checked{% endif %}> Over/Under</label>
-      <label><input type="checkbox" name="{{ plan_name }}_markets" value="Cards" {% if 'Cards' in plan.allowed_markets %}checked{% endif %}> Cards</label>
-      <label><input type="checkbox" name="{{ plan_name }}_markets" value="Who Wins Set" {% if 'Who Wins Set' in plan.allowed_markets %}checked{% endif %}> Who Wins Set</label>
+      {% for sport in sports %}
+      <label><input type="checkbox" name="{{ plan_name }}_sports" value="{{ sport.key }}" {% if sport.key in plan.allowed_sports %}checked{% endif %}> {{ sport.name }}</label>
+      {% endfor %}<br>
+      {% for market in markets %}
+      <label><input type="checkbox" name="{{ plan_name }}_markets" value="{{ market }}" {% if market in plan.allowed_markets %}checked{% endif %}> {{ market }}</label>
+      {% endfor %}
     </div>
     {% endfor %}
   </div>
