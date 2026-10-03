@@ -435,6 +435,27 @@ def dashboard():
     )
 
 
+@app.route("/results")
+def results():
+    user = current_user()
+    if not user:
+        return redirect(url_for("login", next=url_for("results")))
+
+    picks = models.get_user_picks_for_user(user["id"])
+    statuses = Counter(str(pick.get("status") or "pending").strip().lower() for pick in picks)
+    result_counts = {status: statuses[status] for status in ("won", "lost", "pending")}
+    settled_count = result_counts["won"] + result_counts["lost"]
+    success_rate = round(result_counts["won"] / settled_count * 100, 1) if settled_count else None
+    return render_template(
+        "results.html",
+        user=user,
+        picks=picks,
+        result_counts=result_counts,
+        settled_count=settled_count,
+        success_rate=success_rate,
+    )
+
+
 @app.route("/account", methods=["GET", "POST"])
 def account():
     user = current_user()

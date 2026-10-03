@@ -1,21 +1,25 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card">
-  <h2>{{ user.username }}'s Dashboard</h2>
-  <p>Your picks and settled results.</p>
-  <a class="btn" href="/predictions">View Predictions</a>
-  <a class="btn" href="/results" style="margin-left:8px;">View Results</a>
-  <a class="btn" href="/account" style="margin-left:8px;">Account Settings</a>
+  <h2>{{ user.username }}'s Results</h2>
+  <p>Performance is calculated from settled picks only.</p>
+  <a class="btn" href="/dashboard">Back to Dashboard</a>
 </div>
 
-<div class="dashboard-summary" aria-label="Pick result summary">
+<div class="dashboard-summary" aria-label="Settled pick performance">
+  <div><span>SUCCESS RATE</span><strong>{% if success_rate is not none %}{{ '%.1f'|format(success_rate) }}%{% else %}N/A{% endif %}</strong></div>
+  <div><span>SETTLED PICKS</span><strong>{{ settled_count }}</strong></div>
+  <div><span>WON / LOST</span><strong>{{ result_counts.won }} / {{ result_counts.lost }}</strong></div>
+</div>
+
+<div class="dashboard-summary" aria-label="All pick statuses">
   <div><span>WON</span><strong>{{ result_counts.won }}</strong></div>
   <div><span>LOST</span><strong>{{ result_counts.lost }}</strong></div>
   <div><span>PENDING</span><strong>{{ result_counts.pending }}</strong></div>
 </div>
 
 <div class="card">
-  <h3>Pick History</h3>
+  <h3>Pick Results History</h3>
   {% if picks %}
   <div class="results-scroll">
     <table class="results-table">
@@ -45,7 +49,7 @@
     </table>
   </div>
   {% else %}
-  <p>No picks yet. Your pick history and settled results will appear here.</p>
+  <p>No pick results yet. Once you save picks, their outcomes will appear here.</p>
   {% endif %}
 </div>
 {% endblock %}

@@ -216,6 +216,44 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.location, "/login?next=/dashboard")
 
+    def test_results_page_calculates_win_rate_from_settled_picks(self) -> None:
+        user = {"id": 7, "username": "demo"}
+        picks = [
+            {"home_team": "Home 1", "away_team": "Away 1", "status": "won"},
+            {"home_team": "Home 2", "away_team": "Away 2", "status": "won"},
+            {"home_team": "Home 3", "away_team": "Away 3", "status": "lost"},
+            {"home_team": "Home 4", "away_team": "Away 4", "status": "pending"},
+            {"home_team": "Home 5", "away_team": "Away 5", "status": "pending"},
+        ]
+        with patch("app.current_user", return_value=user), patch(
+            "app.models.get_user_picks_for_user", return_value=picks
+        ) as get_picks:
+            response = self.client.get("/results")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"66.7%", response.data)
+        self.assertIn(b"2 / 1", response.data)
+        self.assertIn(b"Pick Results History", response.data)
+        self.assertIn(b"pending", response.data)
+        get_picks.assert_called_once_with(user["id"])
+
+    def test_results_page_shows_no_rate_without_settled_picks(self) -> None:
+        with patch("app.current_user", return_value={"id": 7, "username": "demo"}), patch(
+            "app.models.get_user_picks_for_user", return_value=[{"status": "pending"}]
+        ):
+            response = self.client.get("/results")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"N/A", response.data)
+        self.assertIn(b"Pending", response.data)
+
+    def test_results_page_requires_login(self) -> None:
+        with patch("app.current_user", return_value=None):
+            response = self.client.get("/results")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.location, "/login?next=/results")
+
     def test_predictions_page_does_not_persist_until_lstm_trained(self) -> None:
         match = {
             "home_team": "Bears",
