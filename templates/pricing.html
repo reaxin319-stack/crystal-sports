@@ -10,7 +10,7 @@
     <p>Max slips: {{ plan.max_odds }} odds</p>
     <p>Sports: {{ plan.allowed_sports | join(', ') }}</p>
     <p>Markets: {{ plan.allowed_markets | join(', ') }}</p>
-    <form method="post" action="/predictions">
+    <form method="get" action="{{ url_for('register') }}">
       <input type="hidden" name="plan" value="{{ key }}">
       <button type="submit">Choose {{ plan.name }}</button>
     </form>

@@ -15,6 +15,7 @@ from flask import Flask, redirect, render_template, request, session, url_for
 
 from services.admin_service import AdminConfigService
 from services.data_service import DataService
+from services.daily_picks import DailyPickService
 from services.prediction_engine import MarketFavoritePredictionEngine, PredictionEngine, RandomForestPredictionEngine
 from services.subscription import SubscriptionService
 import models
@@ -31,6 +32,7 @@ app = Flask(__name__)
 app.secret_key = "crystal-sports-dev-secret"
 
 app.config["DATA_SERVICE"] = DataService()
+app.config["DAILY_PICK_SERVICE"] = DailyPickService()
 app.config["PREDICTION_ENGINE"] = RandomForestPredictionEngine(history_provider=models.get_resolved_user_picks)
 app.config["MARKET_FAVORITE_PREDICTION_ENGINE"] = MarketFavoritePredictionEngine()
 app.config["SUBSCRIPTION_SERVICE"] = SubscriptionService()
@@ -167,7 +169,7 @@ def predictions():
         plan_name = "free"
         subscription = admin_service.get_plan("free")
 
-    matches = app.config["DATA_SERVICE"].get_live_matches()
+    matches = app.config["DAILY_PICK_SERVICE"].get_matches(app.config["DATA_SERVICE"])
     now_utc = datetime.now(timezone.utc)
     picks = build_display_picks(
         matches,
@@ -218,8 +220,10 @@ def predictions():
 @app.route("/admin", methods=["GET", "POST"])
 def admin_panel():
     user = current_user()
+    if user is None:
+        return redirect(url_for("login", next=url_for("admin_panel")))
     if not is_admin_user(user):
-        return redirect(url_for("predictions"))
+        return redirect(url_for("index"))
 
     admin_service = app.config["ADMIN_SERVICE"]
     if request.method == "POST":
@@ -235,6 +239,9 @@ def admin_panel():
         admin_config=admin_service.get_config(),
         sports=admin_service.get_available_sports(),
         recent_picks=models.get_all_user_picks(),
+        markets=admin_service.get_all_markets(),
+        daily_pick_status=app.config["DAILY_PICK_SERVICE"].status(),
+        generated=request.args.get("generated") == "1",
     )
 
 
@@ -255,6 +262,18 @@ def admin_update_pick_status():
     return redirect(url_for("admin_panel"))
 
 
+@app.route("/admin/generate-picks", methods=["POST"])
+def generate_daily_picks():
+    user = current_user()
+    if user is None:
+        return redirect(url_for("login", next=url_for("admin_panel")))
+    if not is_admin_user(user):
+        return redirect(url_for("admin_panel"))
+
+    app.config["DAILY_PICK_SERVICE"].refresh(app.config["DATA_SERVICE"])
+    return redirect(url_for("admin_panel", generated="1"))
+
+
 @app.route("/admin/create-user", methods=["GET", "POST"])
 def admin_create_user():
     user = current_user()
@@ -267,13 +286,13 @@ def admin_create_user():
         password = request.form.get("password", "").strip()
         plan = request.form.get("plan", "free")
         if not username or not email:
-            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Username and email are required")
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), markets=app.config["ADMIN_SERVICE"].get_all_markets(), recent_picks=models.get_all_user_picks(), daily_pick_status=app.config["DAILY_PICK_SERVICE"].status(), error="Username and email are required")
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Invalid email address")
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), markets=app.config["ADMIN_SERVICE"].get_all_markets(), recent_picks=models.get_all_user_picks(), daily_pick_status=app.config["DAILY_PICK_SERVICE"].status(), error="Invalid email address")
         if models.get_user_by_username(username):
-            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Username already exists")
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), markets=app.config["ADMIN_SERVICE"].get_all_markets(), recent_picks=models.get_all_user_picks(), daily_pick_status=app.config["DAILY_PICK_SERVICE"].status(), error="Username already exists")
         if models.get_user_by_email(email):
-            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Email is already registered")
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=admin_service.get_available_sports(), markets=admin_service.get_all_markets(), recent_picks=models.get_all_user_picks(), daily_pick_status=app.config["DAILY_PICK_SERVICE"].status(), error="Email is already registered")
         models.create_user(username, email, password or models.DEFAULT_ADMIN_PASSWORD, plan)
         return redirect(url_for("admin_panel"))
     return redirect(url_for("admin_panel"))
@@ -285,18 +304,21 @@ def register():
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password")
+        selected_plan = request.form.get("plan", "free")
+        if selected_plan not in {"free", "pro", "elite", "vip"}:
+            selected_plan = "free"
         if not username or not email or not password:
-            return render_template("register.html", error="Username, email, and password are required")
+            return render_template("register.html", error="Username, email, and password are required", selected_plan=selected_plan)
         # basic email validation
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-            return render_template("register.html", error="Invalid email address")
+            return render_template("register.html", error="Invalid email address", selected_plan=selected_plan)
         existing = models.get_user_by_email(email)
         if existing:
-            return render_template("register.html", error="Email is already registered")
+            return render_template("register.html", error="Email is already registered", selected_plan=selected_plan)
         if models.get_user_by_username(username):
-            return render_template("register.html", error="Username already exists")
+            return render_template("register.html", error="Username already exists", selected_plan=selected_plan)
         try:
-            user = models.create_user(username, email, password, "free")
+            user = models.create_user(username, email, password, selected_plan)
             # send confirmation email
             token = secrets.token_urlsafe(24)
             models.set_confirm_token(user['id'], token)
@@ -306,7 +328,10 @@ def register():
             return render_template("register.html", error="Could not create account: %s" % str(e))
         session["user_id"] = user["id"]
         return redirect(url_for("predictions"))
-    return render_template("register.html")
+    selected_plan = request.args.get("plan", "free")
+    if selected_plan not in {"free", "pro", "elite", "vip"}:
+        selected_plan = "free"
+    return render_template("register.html", selected_plan=selected_plan)
 
 
 @app.route("/admin-login")

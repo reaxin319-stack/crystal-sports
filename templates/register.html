@@ -17,9 +17,19 @@
       <label>Password</label><br>
       <input name="password" type="password" autocomplete="new-password" required />
     </div>
+    <div>
+      <label>Plan</label><br>
+      <select name="plan">
+        <option value="free" {% if selected_plan == 'free' %}selected{% endif %}>Free</option>
+        <option value="pro" {% if selected_plan == 'pro' %}selected{% endif %}>Pro</option>
+        <option value="elite" {% if selected_plan == 'elite' %}selected{% endif %}>Elite</option>
+        <option value="vip" {% if selected_plan == 'vip' %}selected{% endif %}>VIP</option>
+      </select>
+    </div>
     <div style="margin-top:12px">
       <button type="submit">Create account</button>
     </div>
   </form>
+  <p><a class="btn" href="/admin">Admin</a></p>
 </div>
 {% endblock %}
