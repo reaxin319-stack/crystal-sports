@@ -15,7 +15,7 @@ from flask import Flask, redirect, render_template, request, session, url_for
 
 from services.admin_service import AdminConfigService
 from services.data_service import DataService
-from services.prediction_engine import MarketFavoritePredictionEngine, PredictionEngine
+from services.prediction_engine import MarketFavoritePredictionEngine, PredictionEngine, RandomForestPredictionEngine
 from services.subscription import SubscriptionService
 import models
 from werkzeug.security import generate_password_hash
@@ -31,7 +31,7 @@ app = Flask(__name__)
 app.secret_key = "crystal-sports-dev-secret"
 
 app.config["DATA_SERVICE"] = DataService()
-app.config["PREDICTION_ENGINE"] = PredictionEngine()
+app.config["PREDICTION_ENGINE"] = RandomForestPredictionEngine(history_provider=models.get_resolved_user_picks)
 app.config["MARKET_FAVORITE_PREDICTION_ENGINE"] = MarketFavoritePredictionEngine()
 app.config["SUBSCRIPTION_SERVICE"] = SubscriptionService()
 app.config["ADMIN_SERVICE"] = AdminConfigService()
@@ -139,6 +139,7 @@ def index():
         "index.html",
         leagues=data_service.get_configured_leagues(),
         sports=admin_service.get_available_sports(),
+        matches=sorted(data_service.get_live_matches(), key=lambda match: not match.get("is_live"))[:8],
     )
 
 
@@ -182,6 +183,8 @@ def predictions():
         admin_service.get_config(),
         now_utc,
     )
+    if user:
+        models.persist_user_picks(user["id"], picks + favorite_picks)
     if is_admin_user(user):
         if subscription.get("name", "").lower() == "vip":
             combo_slips = app.config["PREDICTION_ENGINE"].build_magic_combinations(matches, subscription, admin_service.get_config())
@@ -227,7 +230,29 @@ def admin_panel():
             if target_user:
                 models.update_subscription(target_user["id"], target_plan)
         admin_service.update_from_form(request)
-    return render_template("admin.html", admin_config=admin_service.get_config(), sports=admin_service.get_available_sports())
+    return render_template(
+        "admin.html",
+        admin_config=admin_service.get_config(),
+        sports=admin_service.get_available_sports(),
+        recent_picks=models.get_all_user_picks(),
+    )
+
+
+@app.route("/admin/picks", methods=["POST"])
+def admin_update_pick_status():
+    user = current_user()
+    if not is_admin_user(user):
+        return redirect(url_for("predictions"))
+
+    pick_id = request.form.get("pick_id")
+    status = request.form.get("status", "pending")
+    try:
+        pick_id = int(pick_id)
+    except (TypeError, ValueError):
+        return redirect(url_for("admin_panel"))
+
+    models.set_user_pick_status(pick_id, status)
+    return redirect(url_for("admin_panel"))
 
 
 @app.route("/admin/create-user", methods=["GET", "POST"])
@@ -243,8 +268,12 @@ def admin_create_user():
         plan = request.form.get("plan", "free")
         if not username or not email:
             return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Username and email are required")
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Invalid email address")
         if models.get_user_by_username(username):
             return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Username already exists")
+        if models.get_user_by_email(email):
+            return render_template("admin.html", admin_config=app.config["ADMIN_SERVICE"].get_config(), sports=app.config["ADMIN_SERVICE"].get_available_sports(), error="Email is already registered")
         models.create_user(username, email, password or models.DEFAULT_ADMIN_PASSWORD, plan)
         return redirect(url_for("admin_panel"))
     return redirect(url_for("admin_panel"))
@@ -253,19 +282,19 @@ def admin_create_user():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
+        username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password")
-        if not email or not password:
-            return render_template("register.html", error="Email and password are required")
+        if not username or not email or not password:
+            return render_template("register.html", error="Username, email, and password are required")
         # basic email validation
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
             return render_template("register.html", error="Invalid email address")
         existing = models.get_user_by_email(email)
         if existing:
             return render_template("register.html", error="Email is already registered")
-        username = f"member_{secrets.token_hex(8)}"
-        while models.get_user_by_username(username):
-            username = f"member_{secrets.token_hex(8)}"
+        if models.get_user_by_username(username):
+            return render_template("register.html", error="Username already exists")
         try:
             user = models.create_user(username, email, password, "free")
             # send confirmation email
@@ -280,14 +309,23 @@ def register():
     return render_template("register.html")
 
 
+@app.route("/admin-login")
+def admin_login():
+    admin_user = models.verify_user(models.DEFAULT_ADMIN_USERNAME, models.DEFAULT_ADMIN_PASSWORD)
+    if not admin_user:
+        return redirect(url_for("login"))
+    session["user_id"] = admin_user["id"]
+    return redirect(url_for("admin_panel"))
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        email = request.form.get("email", "").strip()
         username = request.form.get("username", "").strip()
-        login_identifier = email or username
         password = request.form.get("password")
-        user = models.verify_user(login_identifier, password)
+        if not username or not password:
+            return render_template("login.html", error="Username and password are required")
+        user = models.verify_user(username, password)
         if not user:
             return render_template("login.html", error="Invalid credentials")
         session["user_id"] = user["id"]
@@ -373,7 +411,8 @@ def account():
         user = models.get_user_by_id(user["id"])
         message = f"Plan updated to {plan}"
     purchases = models.get_purchases_for_user(user['id'])
-    return render_template("account.html", user=user, message=message, purchases=purchases)
+    user_picks = models.get_user_picks_for_user(user['id'])
+    return render_template("account.html", user=user, message=message, purchases=purchases, user_picks=user_picks)
 
 
 @app.route('/create-checkout-session', methods=['POST'])

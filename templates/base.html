@@ -29,6 +29,27 @@
     button, .btn { background: #f59e0b; color: #08101b; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; }
     .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
     .pill { display: inline-block; background: rgba(27, 53, 80, 0.9); padding: 6px 10px; border-radius: 999px; margin-right: 8px; }
+    .home-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+    .home-main { min-width: 0; }
+    .live-feed { background: rgba(16, 35, 59, 0.94); border: 1px solid rgba(39, 64, 96, 0.9); border-radius: 8px; padding: 18px; margin: 16px 0; }
+    .live-feed-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid rgba(147, 170, 196, 0.2); }
+    .live-feed-header h2, .live-feed-header p { margin: 0; }
+    .live-feed-header p, .feed-match-meta, .feed-away-team time, .feed-empty { color: #a9bacd; font-size: 0.82rem; }
+    .live-count, .feed-live-status, .feed-upcoming-status { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; }
+    .live-count, .feed-live-status { color: #f87171; }
+    .feed-upcoming-status { color: #9ab0c7; }
+    .feed-match { padding: 14px 0; border-bottom: 1px solid rgba(147, 170, 196, 0.16); }
+    .feed-match-meta, .feed-team-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .feed-match-meta { margin-bottom: 9px; }
+    .feed-team-line { min-width: 0; font-size: 0.9rem; }
+    .feed-team-line > span:first-child { overflow-wrap: anywhere; }
+    .feed-team-line strong { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+    .feed-versus { color: #8296ad; font-size: 0.78rem; font-weight: 500; }
+    .feed-away-team { margin-top: 6px; }
+    .feed-away-team time { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+    .feed-empty { margin: 18px 0; }
+    .feed-link { display: inline-block; margin-top: 14px; font-weight: 600; }
+    @media (max-width: 860px) { .home-layout { grid-template-columns: minmax(0, 1fr); gap: 0; } }
   </style>
 </head>
 <body>
@@ -42,7 +63,7 @@
         {% if session.get('user_id') %}
           | <a href="/logout">Sign out</a>
         {% else %}
-          | <a href="/login">Sign in</a> | <a href="/register">Register</a>
+          | <a href="/login">Sign in</a> | <a href="/register">Register</a> | <a href="/admin-login">Admin Login</a>
         {% endif %}
       </div>
     </nav>

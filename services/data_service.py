@@ -28,7 +28,7 @@ class DataService:
         now = datetime.now(timezone.utc)
         future_matches: List[Dict[str, Any]] = []
         for match in all_matches:
-            if self._is_upcoming_match(match.get("scheduled_at"), now):
+            if match.get("is_live") or self._is_upcoming_match(match.get("scheduled_at"), now):
                 future_matches.append(match)
 
         if future_matches:
@@ -236,6 +236,9 @@ class DataService:
         if not odds:
             return None
 
+        home_score, away_score = self._extract_scores(item)
+        status, status_detail, is_live = self._extract_status(item)
+
         return {
             "home_team": home,
             "away_team": away,
@@ -244,7 +247,63 @@ class DataService:
             "market": market,
             "odds": odds,
             "scheduled_at": self._extract_scheduled_at(item) or self._build_future_schedule(),
+            "home_score": home_score,
+            "away_score": away_score,
+            "status": status,
+            "status_detail": status_detail,
+            "is_live": is_live,
         }
+
+    def _extract_scores(self, item: Dict[str, Any]) -> tuple[Any, Any]:
+        home_score = self._pick_first(item, ["home_score", "homeScore"])
+        away_score = self._pick_first(item, ["away_score", "awayScore"])
+        competitions = item.get("competitions")
+        if home_score is not None and away_score is not None:
+            return home_score, away_score
+        if not isinstance(competitions, list):
+            return home_score, away_score
+
+        for competition in competitions:
+            if not isinstance(competition, dict):
+                continue
+            competitors = competition.get("competitors")
+            if not isinstance(competitors, list):
+                continue
+            for competitor in competitors:
+                if not isinstance(competitor, dict):
+                    continue
+                score = competitor.get("score")
+                if competitor.get("homeAway") == "home":
+                    home_score = home_score if home_score is not None else score
+                elif competitor.get("homeAway") == "away":
+                    away_score = away_score if away_score is not None else score
+            if home_score is not None or away_score is not None:
+                return home_score, away_score
+        return home_score, away_score
+
+    def _extract_status(self, item: Dict[str, Any]) -> tuple[str, str, bool]:
+        raw_status = item.get("status") or item.get("state") or item.get("strStatus")
+        status_type = raw_status.get("type") if isinstance(raw_status, dict) else None
+        if not isinstance(status_type, dict):
+            status_type = {}
+
+        status_name = (
+            status_type.get("name")
+            or status_type.get("description")
+            or (raw_status.get("name") if isinstance(raw_status, dict) else raw_status)
+            or "Scheduled"
+        )
+        status_state = status_type.get("state") or (raw_status.get("state") if isinstance(raw_status, dict) else "")
+        status_detail = (
+            (raw_status.get("displayClock") or raw_status.get("shortDetail") or raw_status.get("detail"))
+            if isinstance(raw_status, dict)
+            else ""
+        ) or status_type.get("shortDetail") or ""
+        status_text = str(status_name)
+        is_live = str(status_state).casefold() in {"in", "live", "in_progress"} or any(
+            marker in status_text.casefold() for marker in ("in progress", "in_progress", "live")
+        )
+        return status_text, str(status_detail), is_live
 
     def _guess_sport(self, league: str | None, home: str | None, away: str | None, sport_hint: Any = None) -> str:
         normalized = [str(value or "") for value in [league, home, away, sport_hint]]
@@ -263,6 +322,14 @@ class DataService:
         for container in [item, item.get("odds")]:
             if isinstance(container, dict):
                 candidate_keys.extend(str(key).lower() for key in container.keys())
+
+        normalized_keys = [re.sub(r"[^a-z0-9]", "", key) for key in candidate_keys]
+        if any(
+            key.startswith(("over", "under", "totalover", "totalunder", "goalsover", "goalsunder"))
+            and ("15" in key or "25" in key)
+            for key in normalized_keys
+        ):
+            return "Over/Under"
 
         if any(key in candidate_keys for key in [
             "home", "draw", "away",
@@ -386,19 +453,35 @@ class DataService:
         return {}
 
     def _extract_odds(self, item: Dict[str, Any]) -> Dict[str, Any]:
-        espn_odds = self._extract_espn_odds(item)
-        if espn_odds:
-            return espn_odds
-
         odds = item.get("odds") if isinstance(item.get("odds"), dict) else {}
         if not odds:
             odds = item
 
         if self._guess_market(item) == "Over/Under":
-            over = self._coerce_float(self._pick_first(item, ["over_odds", "over", "over_price", "overOdds", "strOddsOver", "overOdds"]))
-            under = self._coerce_float(self._pick_first(item, ["under_odds", "under", "under_price", "underOdds", "strOddsUnder", "underOdds"]))
+            total_odds = {}
+            line_aliases = {
+                "over_1_5": ["over_1_5", "over_1.5", "over15", "over_15", "over_1_5_odds", "over15_odds", "over15Odds", "goals_over_1_5", "total_over_1_5"],
+                "under_1_5": ["under_1_5", "under_1.5", "under15", "under_15", "under_1_5_odds", "under15_odds", "under15Odds", "goals_under_1_5", "total_under_1_5"],
+                "over_2_5": ["over_2_5", "over_2.5", "over25", "over_25", "over_2_5_odds", "over25_odds", "over25Odds", "goals_over_2_5", "total_over_2_5"],
+                "under_2_5": ["under_2_5", "under_2.5", "under25", "under_25", "under_2_5_odds", "under25_odds", "under25Odds", "goals_under_2_5", "total_under_2_5"],
+            }
+            for normalized_key, aliases in line_aliases.items():
+                price = self._coerce_float(self._pick_first(odds, aliases))
+                if price:
+                    total_odds[normalized_key] = price
+
+            over = self._coerce_float(self._pick_first(odds, ["over_odds", "over", "over_price", "overOdds", "strOddsOver"]))
+            under = self._coerce_float(self._pick_first(odds, ["under_odds", "under", "under_price", "underOdds", "strOddsUnder"]))
+            if total_odds:
+                if over and under:
+                    total_odds.update({"over": over, "under": under})
+                return total_odds
             if over and under:
                 return {"over": over, "under": under}
+
+        espn_odds = self._extract_espn_odds(item)
+        if espn_odds:
+            return espn_odds
 
         if self._guess_market(item) == "Cards":
             cards_over = self._coerce_float(self._pick_first(item, ["cards_over", "cardsOver", "cards_over_odds", "strOddsOver", "overOdds"]))

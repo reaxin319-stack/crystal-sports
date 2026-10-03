@@ -10,6 +10,42 @@ class AppRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = app.test_client()
 
+    def test_home_page_displays_live_scores_in_feed(self) -> None:
+        match = {
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "league": "Premier League",
+            "sport": "soccer",
+            "home_score": "2",
+            "away_score": "1",
+            "is_live": True,
+            "status_detail": "63'",
+            "scheduled_at": "2026-10-01T12:00:00+00:00",
+        }
+
+        class TestDataService:
+            def get_configured_leagues(self):
+                return []
+
+            def get_live_matches(self):
+                return [match]
+
+        class TestAdminService:
+            def get_available_sports(self):
+                return []
+
+        with patch.dict(
+            app.config,
+            {"DATA_SERVICE": TestDataService(), "ADMIN_SERVICE": TestAdminService()},
+        ):
+            response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Live Feed", response.data)
+        self.assertIn(b"Home FC", response.data)
+        self.assertIn(b"2 - 1", response.data)
+        self.assertIn(b"LIVE", response.data)
+
     def test_predictions_page_loads(self) -> None:
         response = self.client.get("/predictions")
         self.assertEqual(response.status_code, 200)
@@ -61,7 +97,7 @@ class AppRouteTests(unittest.TestCase):
         self.assertIn(b"Market Favorite Engine", response.data)
         self.assertIn(b"Selection: <strong>home</strong>", response.data)
 
-    def test_register_requires_only_email_and_password_and_ignores_plan(self) -> None:
+    def test_register_requires_username_email_and_password(self) -> None:
         created_user = {"id": 42, "email": "new@example.com"}
         with patch("app.models.get_user_by_email", return_value=None), patch(
             "app.models.get_user_by_username", return_value=None
@@ -70,32 +106,165 @@ class AppRouteTests(unittest.TestCase):
         ), patch("app.send_email"):
             response = self.client.post(
                 "/register",
-                data={"email": "new@example.com", "password": "secure-password", "plan": "vip"},
+                data={"username": "newmember", "email": "new@example.com", "password": "secure-password"},
             )
 
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(create_user.call_args.args[0].startswith("member_"))
-        self.assertEqual(create_user.call_args.args[1:], ("new@example.com", "secure-password", "free"))
+        self.assertEqual(create_user.call_args.args, ("newmember", "new@example.com", "secure-password", "free"))
 
-    def test_registration_form_only_requests_email_and_password(self) -> None:
+    def test_register_rejects_missing_username(self) -> None:
+        with patch("app.models.create_user") as create_user:
+            response = self.client.post(
+                "/register",
+                data={"email": "new@example.com", "password": "secure-password"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Username, email, and password are required", response.data)
+        create_user.assert_not_called()
+
+    def test_registration_form_requires_username_email_and_password(self) -> None:
         response = self.client.get("/register")
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn(b'name="username"', response.data)
         self.assertIn(b'name="email"', response.data)
         self.assertIn(b'name="password"', response.data)
-        self.assertNotIn(b'name="username"', response.data)
         self.assertNotIn(b'name="plan"', response.data)
 
-    def test_login_accepts_email(self) -> None:
+    def test_login_uses_username_and_password(self) -> None:
         user = {"id": 42}
         with patch("app.models.verify_user", return_value=user) as verify_user:
+            response = self.client.post(
+                "/login",
+                data={"username": "person", "password": "secure-password"},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        verify_user.assert_called_once_with("person", "secure-password")
+
+    def test_login_requires_username_even_if_email_is_supplied(self) -> None:
+        with patch("app.models.verify_user") as verify_user:
             response = self.client.post(
                 "/login",
                 data={"email": "person@example.com", "password": "secure-password"},
             )
 
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Username and password are required", response.data)
+        verify_user.assert_not_called()
+
+    def test_admin_login_route_logs_in_admin_user(self) -> None:
+        admin_user = {"id": 99, "is_admin": 1}
+        with patch("app.models.verify_user", return_value=admin_user) as verify_user:
+            response = self.client.get("/admin-login")
+
         self.assertEqual(response.status_code, 302)
-        verify_user.assert_called_once_with("person@example.com", "secure-password")
+        verify_user.assert_called_once_with("admin", "Admin123!")
+        with self.client.session_transaction() as session:
+            self.assertEqual(session["user_id"], 99)
+
+    def test_account_page_displays_pick_results_and_statuses(self) -> None:
+        user = {"id": 7, "username": "demo", "email": "demo@example.com", "plan": "free"}
+        with patch("app.current_user", return_value=user), patch(
+            "app.models.get_user_picks_for_user",
+            return_value=[
+                {"league": "NHL", "selection": "home", "status": "won", "scheduled_at": "2026-10-01T18:00:00+00:00"},
+                {"league": "Premier League", "selection": "draw", "status": "lost", "scheduled_at": "2026-10-02T15:00:00+00:00"},
+                {"league": "ATP", "selection": "Player A", "status": "pending", "scheduled_at": "2026-10-03T12:00:00+00:00"},
+            ],
+        ):
+            response = self.client.get("/account")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Pick Results", response.data)
+        self.assertIn(b"Won", response.data)
+        self.assertIn(b"Lost", response.data)
+        self.assertIn(b"Pending", response.data)
+
+    def test_predictions_page_auto_saves_generated_picks_for_logged_in_user(self) -> None:
+        match = {
+            "home_team": "Bears",
+            "away_team": "Wolves",
+            "league": "NHL",
+            "sport": "hockey",
+            "market": "WLD",
+            "odds": {"home": 2.1, "draw": 3.5, "away": 2.8},
+            "scheduled_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        }
+
+        class TestDataService:
+            def get_live_matches(self):
+                return [match]
+
+            def get_configured_leagues(self):
+                return []
+
+        class TestAdminService:
+            def get_plan(self, _plan_name):
+                return {
+                    "name": "Free",
+                    "duration": "1 month",
+                    "max_odds": 3,
+                    "allowed_sports": ["hockey"],
+                    "allowed_markets": ["WLD"],
+                }
+
+            def get_config(self):
+                return {"allowed_markets": {"hockey": ["WLD"]}}
+
+        user = {"id": 9, "plan": "free"}
+        with patch("app.current_user", return_value=user), patch.dict(
+            app.config,
+            {
+                "DATA_SERVICE": TestDataService(),
+                "ADMIN_SERVICE": TestAdminService(),
+                "PREDICTION_ENGINE": PredictionEngine(),
+                "MARKET_FAVORITE_PREDICTION_ENGINE": MarketFavoritePredictionEngine(),
+            },
+        ), patch("app.models.persist_user_picks") as persist_user_picks:
+            response = self.client.get("/predictions")
+
+        self.assertEqual(response.status_code, 200)
+        persist_user_picks.assert_called_once()
+        call_args = persist_user_picks.call_args.args
+        self.assertEqual(call_args[0], 9)
+        self.assertTrue(call_args[1])
+
+    def test_admin_can_update_pick_result_status(self) -> None:
+        user = {"id": 99, "is_admin": 1}
+        with patch("app.current_user", return_value=user), patch("app.models.set_user_pick_status") as update_status:
+            response = self.client.post(
+                "/admin/picks",
+                data={"pick_id": "12", "status": "won"},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        update_status.assert_called_once_with(12, "won")
+
+    def test_admin_page_displays_previous_pick_results(self) -> None:
+        user = {"id": 99, "is_admin": 1}
+        pick = {
+            "id": 12,
+            "username": "reviewer",
+            "league": "Premier League",
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "selection": "home",
+            "odds": 1.8,
+            "scheduled_at": "2026-10-01T18:00:00+00:00",
+            "status": "won",
+        }
+        with patch("app.current_user", return_value=user), patch(
+            "app.models.get_all_user_picks", return_value=[pick]
+        ):
+            response = self.client.get("/admin")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"All User Pick Results", response.data)
+        self.assertIn(b"reviewer", response.data)
+        self.assertIn(b"Scheduled: 2026-10-01T18:00:00+00:00", response.data)
+        self.assertIn(b"Status: Won", response.data)
 
 
 if __name__ == "__main__":

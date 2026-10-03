@@ -6,6 +6,10 @@
   {% if error %}<p style="color:#fca5a5">{{ error }}</p>{% endif %}
   <form method="post">
     <div>
+      <label>Username</label><br>
+      <input name="username" type="text" autocomplete="username" required />
+    </div>
+    <div>
       <label>Email</label><br>
       <input name="email" type="email" autocomplete="email" required />
     </div>

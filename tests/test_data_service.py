@@ -8,6 +8,33 @@ from services.data_service import DataService
 
 
 class DataServiceScheduleTests(unittest.TestCase):
+    def test_goal_total_odds_keep_15_and_25_lines_distinct(self) -> None:
+        service = DataService()
+        match = service._build_match_from_payload(
+            {
+                "home_team": "Home FC",
+                "away_team": "Away FC",
+                "league": "Premier League",
+                "sport": "soccer",
+                "odds": {
+                    "over_1_5": 1.35,
+                    "under_1_5": 3.1,
+                    "over_2_5": 1.9,
+                    "under_2_5": 1.95,
+                },
+                "competitions": [
+                    {"odds": [{"moneyline": {"home": "+110", "draw": "+200", "away": "+300"}}]}
+                ],
+            }
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match["market"], "Over/Under")
+        self.assertEqual(
+            match["odds"],
+            {"over_1_5": 1.35, "under_1_5": 3.1, "over_2_5": 1.9, "under_2_5": 1.95},
+        )
+
     def test_matches_include_future_schedule_at_least_three_hours_ahead(self) -> None:
         service = DataService()
         matches = service.get_live_matches()
@@ -17,6 +44,33 @@ class DataServiceScheduleTests(unittest.TestCase):
             self.assertIsNotNone(scheduled_at)
             parsed = datetime.fromisoformat(scheduled_at)
             self.assertGreater(parsed, datetime.now(timezone.utc) + timedelta(hours=3))
+
+    def test_live_events_keep_scores_and_survive_schedule_filter(self) -> None:
+        service = DataService()
+        event = {
+            "date": (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat(),
+            "status": {
+                "type": {"name": "STATUS_IN_PROGRESS", "state": "in", "shortDetail": "63'"}
+            },
+            "competitions": [
+                {
+                    "competitors": [
+                        {"homeAway": "home", "team": {"displayName": "Home FC"}, "score": "2"},
+                        {"homeAway": "away", "team": {"displayName": "Away FC"}, "score": "1"},
+                    ]
+                }
+            ],
+        }
+
+        with patch.object(service, "_fetch_api_payloads", return_value=[{"events": [event]}]), patch.object(
+            service, "_get_free_odd_scrapers", return_value=[]
+        ):
+            matches = service.get_live_matches()
+
+        self.assertEqual(len(matches), 1)
+        self.assertTrue(matches[0]["is_live"])
+        self.assertEqual((matches[0]["home_score"], matches[0]["away_score"]), ("2", "1"))
+        self.assertEqual(matches[0]["status_detail"], "63'")
 
     def test_default_live_sources_cover_multiple_free_feeds(self) -> None:
         service = DataService()

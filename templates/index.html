@@ -1,23 +1,70 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="card">
-  <h2>Crystal-Sports Prediction Hub</h2>
-  {% if message %}
-    <p style="color:#9ae6b4">{{ message }}</p>
-  {% else %}
-    <p>Daily picks for soccer, hockey, and tennis with admin-controlled markets and subscription-based access.</p>
-  {% endif %}
-  <a class="btn" href="/predictions">View Today's Picks</a>
-  <a class="btn" href="/admin" style="margin-left:8px;">Admin</a>
-</div>
+<div class="home-layout">
+  <main class="home-main">
+    <div class="card">
+      <h2>Crystal-Sports Prediction Hub</h2>
+      {% if message %}
+        <p style="color:#9ae6b4">{{ message }}</p>
+      {% else %}
+        <p>Daily picks for soccer, hockey, and tennis with admin-controlled markets and subscription-based access.</p>
+      {% endif %}
+      <a class="btn" href="/predictions">View Today's Picks</a>
+      <a class="btn" href="/admin" style="margin-left:8px;">Admin</a>
+    </div>
 
-<div class="grid">
-  {% for sport in sports %}
-  <div class="card">
-    <h3>{{ sport.name }}</h3>
-    <p>Leagues: {{ sport.leagues | join(', ') }}</p>
-    <div class="pill">Multi-market</div>
-  </div>
-  {% endfor %}
+    <div class="grid">
+      {% for sport in sports %}
+      <div class="card">
+        <h3>{{ sport.name }}</h3>
+        <p>Leagues: {{ sport.leagues | join(', ') }}</p>
+        <div class="pill">Multi-market</div>
+      </div>
+      {% endfor %}
+    </div>
+  </main>
+
+  <aside class="live-feed" aria-label="Live sports feed">
+    <header class="live-feed-header">
+      <div>
+        <h2>Live Feed</h2>
+        <p>Scores and kickoff times</p>
+      </div>
+      <span class="live-count">{{ matches | selectattr('is_live') | list | length }} LIVE</span>
+    </header>
+    {% if matches %}
+      {% for match in matches %}
+      <article class="feed-match">
+        <div class="feed-match-meta">
+          <span>{{ match.league }}</span>
+          {% if match.is_live %}
+          <span class="feed-live-status">LIVE{% if match.status_detail %} - {{ match.status_detail }}{% endif %}</span>
+          {% else %}
+          <span class="feed-upcoming-status">UPCOMING</span>
+          {% endif %}
+        </div>
+        <div class="feed-team-line">
+          <span>{{ match.home_team }}</span>
+          {% if match.is_live and match.home_score is not none and match.away_score is not none %}
+          <strong>{{ match.home_score }} - {{ match.away_score }}</strong>
+          {% else %}
+          <strong class="feed-versus">vs</strong>
+          {% endif %}
+        </div>
+        <div class="feed-team-line feed-away-team">
+          <span>{{ match.away_team }}</span>
+          {% if match.is_live and match.home_score is not none and match.away_score is not none %}
+          <span aria-hidden="true"></span>
+          {% elif match.scheduled_at %}
+          <time>{{ match.scheduled_at[:16] | replace('T', ' ') }} UTC</time>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    {% else %}
+      <p class="feed-empty">No live or upcoming matches right now.</p>
+    {% endif %}
+    <a class="feed-link" href="/predictions">View all picks</a>
+  </aside>
 </div>
 {% endblock %}
