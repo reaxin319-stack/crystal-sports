@@ -3,8 +3,19 @@ from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from app import build_display_picks, resolve_display_date
-from services.prediction_engine import PredictionEngine
 from services.data_service import DataService
+
+
+class FixtureSelectionEngine:
+    def build_slips(self, matches, subscription, _admin_config):
+        return [
+            {
+                **match,
+                "selection": "home",
+                "odds": match["odds"]["home"],
+            }
+            for match in matches[: subscription["max_odds"]]
+        ]
 
 
 class DataServiceScheduleTests(unittest.TestCase):
@@ -175,7 +186,7 @@ class DataServiceScheduleTests(unittest.TestCase):
 
         picks = build_display_picks(
             matches,
-            PredictionEngine(),
+            FixtureSelectionEngine(),
             {"max_odds": 3, "allowed_sports": ["soccer"], "allowed_markets": ["WLD"]},
             {"allowed_markets": {"soccer": ["WLD"]}},
             now,
@@ -209,7 +220,7 @@ class DataServiceScheduleTests(unittest.TestCase):
 
         picks = build_display_picks(
             matches,
-            PredictionEngine(),
+            FixtureSelectionEngine(),
             {"max_odds": 3, "allowed_sports": ["soccer", "hockey"], "allowed_markets": ["WLD"]},
             {"allowed_markets": {"soccer": ["WLD"], "hockey": ["WLD"]}},
             now,

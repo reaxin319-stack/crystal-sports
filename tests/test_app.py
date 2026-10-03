@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from app import app
-from services.prediction_engine import MarketFavoritePredictionEngine, PredictionEngine
+from services.lstm_prediction_engine import LSTMPredictionEngine
 
 
 class AppRouteTests(unittest.TestCase):
@@ -51,7 +51,7 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Predictions", response.data)
 
-    def test_predictions_page_shows_market_favorite_engine(self) -> None:
+    def test_predictions_page_shows_lstm_untrained_state(self) -> None:
         match = {
             "home_team": "Home FC",
             "away_team": "Away FC",
@@ -87,15 +87,14 @@ class AppRouteTests(unittest.TestCase):
             {
                 "DATA_SERVICE": TestDataService(),
                 "ADMIN_SERVICE": TestAdminService(),
-                "PREDICTION_ENGINE": PredictionEngine(),
-                "MARKET_FAVORITE_PREDICTION_ENGINE": MarketFavoritePredictionEngine(),
+                "PREDICTION_ENGINE": LSTMPredictionEngine(history_provider=lambda: []),
             },
         ):
             response = self.client.get("/predictions")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Market Favorite Engine", response.data)
-        self.assertIn(b"Selection: <strong>home</strong>", response.data)
+        self.assertIn(b"LSTM Final Selections", response.data)
+        self.assertIn(b"LSTM is not trained yet.", response.data)
 
     def test_register_requires_username_email_and_password(self) -> None:
         created_user = {"id": 42, "email": "new@example.com"}
@@ -111,6 +110,7 @@ class AppRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(create_user.call_args.args, ("newmember", "new@example.com", "secure-password", "free"))
+        self.assertEqual(response.location, "/dashboard")
 
     def test_register_rejects_missing_username(self) -> None:
         with patch("app.models.create_user") as create_user:
@@ -142,6 +142,7 @@ class AppRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         verify_user.assert_called_once_with("person", "secure-password")
+        self.assertEqual(response.location, "/dashboard")
 
     def test_login_requires_username_even_if_email_is_supplied(self) -> None:
         with patch("app.models.verify_user") as verify_user:
@@ -182,7 +183,40 @@ class AppRouteTests(unittest.TestCase):
         self.assertIn(b"Lost", response.data)
         self.assertIn(b"Pending", response.data)
 
-    def test_predictions_page_auto_saves_generated_picks_for_logged_in_user(self) -> None:
+    def test_dashboard_shows_user_pick_history_and_result_counts(self) -> None:
+        user = {"id": 7, "username": "demo"}
+        picks = [
+            {"home_team": "Home FC", "away_team": "Away FC", "market": "WLD", "selection": "home", "odds": 1.8, "scheduled_at": "2026-10-01", "status": "won"},
+            {"home_team": "Team A", "away_team": "Team B", "market": "WLD", "selection": "draw", "odds": 3.2, "scheduled_at": "2026-10-02", "status": "lost"},
+            {"home_team": "Player A", "away_team": "Player B", "market": "Who Wins Set", "selection": "Player A", "odds": 2.0, "scheduled_at": "2026-10-03", "status": "pending"},
+        ]
+        with patch("app.current_user", return_value=user), patch(
+            "app.models.get_user_picks_for_user", return_value=picks
+        ) as get_picks:
+            with self.client.session_transaction() as session:
+                session["user_id"] = user["id"]
+            response = self.client.get("/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"demo's Dashboard", response.data)
+        self.assertIn(b"Home FC vs Away FC", response.data)
+        self.assertIn(b"Player A vs Player B", response.data)
+        self.assertIn(b">Won</span>", response.data)
+        self.assertIn(b">Lost</span>", response.data)
+        self.assertIn(b">Pending</span>", response.data)
+        self.assertIn(b"Dashboard", response.data)
+        self.assertIn(b"Account", response.data)
+        self.assertEqual(response.data.count(b"<strong>1</strong>"), 3)
+        get_picks.assert_called_once_with(user["id"])
+
+    def test_dashboard_requires_login(self) -> None:
+        with patch("app.current_user", return_value=None):
+            response = self.client.get("/dashboard")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.location, "/login?next=/dashboard")
+
+    def test_predictions_page_does_not_persist_until_lstm_trained(self) -> None:
         match = {
             "home_team": "Bears",
             "away_team": "Wolves",
@@ -219,17 +253,13 @@ class AppRouteTests(unittest.TestCase):
             {
                 "DATA_SERVICE": TestDataService(),
                 "ADMIN_SERVICE": TestAdminService(),
-                "PREDICTION_ENGINE": PredictionEngine(),
-                "MARKET_FAVORITE_PREDICTION_ENGINE": MarketFavoritePredictionEngine(),
+                "PREDICTION_ENGINE": LSTMPredictionEngine(history_provider=lambda: []),
             },
         ), patch("app.models.persist_user_picks") as persist_user_picks:
             response = self.client.get("/predictions")
 
         self.assertEqual(response.status_code, 200)
-        persist_user_picks.assert_called_once()
-        call_args = persist_user_picks.call_args.args
-        self.assertEqual(call_args[0], 9)
-        self.assertTrue(call_args[1])
+        persist_user_picks.assert_not_called()
 
     def test_admin_can_update_pick_result_status(self) -> None:
         user = {"id": 99, "is_admin": 1}

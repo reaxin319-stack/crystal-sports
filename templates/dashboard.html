@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>{{ user.username }}'s Dashboard</h2>
+  <p>Your picks and settled results.</p>
+  <a class="btn" href="/predictions">View Predictions</a>
+  <a class="btn" href="/account" style="margin-left:8px;">Account Settings</a>
+</div>
+
+<div class="dashboard-summary" aria-label="Pick result summary">
+  <div><span>WON</span><strong>{{ result_counts.won }}</strong></div>
+  <div><span>LOST</span><strong>{{ result_counts.lost }}</strong></div>
+  <div><span>PENDING</span><strong>{{ result_counts.pending }}</strong></div>
+</div>
+
+<div class="card">
+  <h3>Pick History</h3>
+  {% if picks %}
+  <div class="results-scroll">
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Match</th>
+          <th>Market</th>
+          <th>Selection</th>
+          <th>Odds</th>
+          <th>Scheduled</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pick in picks %}
+        {% set status = (pick.status or 'pending')|lower %}
+        <tr>
+          <td>{{ pick.home_team }} vs {{ pick.away_team }}</td>
+          <td>{{ pick.market }}</td>
+          <td>{{ pick.selection }}</td>
+          <td>{{ pick.odds }}</td>
+          <td>{{ pick.scheduled_at or 'TBC' }}</td>
+          <td><span class="result-badge result-{{ status }}">{{ status|title }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p>No picks yet. Your pick history and settled results will appear here.</p>
+  {% endif %}
+</div>
+{% endblock %}

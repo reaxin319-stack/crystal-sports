@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 import os
 import sys
@@ -16,7 +17,7 @@ from flask import Flask, redirect, render_template, request, session, url_for
 from services.admin_service import AdminConfigService
 from services.data_service import DataService
 from services.daily_picks import DailyPickService
-from services.prediction_engine import MarketFavoritePredictionEngine, PredictionEngine, RandomForestPredictionEngine
+from services.lstm_prediction_engine import LSTMPredictionEngine
 from services.subscription import SubscriptionService
 import models
 from werkzeug.security import generate_password_hash
@@ -33,8 +34,7 @@ app.secret_key = "crystal-sports-dev-secret"
 
 app.config["DATA_SERVICE"] = DataService()
 app.config["DAILY_PICK_SERVICE"] = DailyPickService()
-app.config["PREDICTION_ENGINE"] = RandomForestPredictionEngine(history_provider=models.get_resolved_user_picks)
-app.config["MARKET_FAVORITE_PREDICTION_ENGINE"] = MarketFavoritePredictionEngine()
+app.config["PREDICTION_ENGINE"] = LSTMPredictionEngine(history_provider=models.get_resolved_user_picks)
 app.config["SUBSCRIPTION_SERVICE"] = SubscriptionService()
 app.config["ADMIN_SERVICE"] = AdminConfigService()
 models.init_db()
@@ -171,25 +171,20 @@ def predictions():
 
     matches = app.config["DAILY_PICK_SERVICE"].get_matches(app.config["DATA_SERVICE"])
     now_utc = datetime.now(timezone.utc)
+    prediction_engine = app.config["PREDICTION_ENGINE"]
+    prediction_engine.prepare()
     picks = build_display_picks(
         matches,
-        app.config["PREDICTION_ENGINE"],
+        prediction_engine,
         subscription,
         admin_service.get_config(),
         now_utc,
     )
-    favorite_picks = build_display_picks(
-        matches,
-        app.config["MARKET_FAVORITE_PREDICTION_ENGINE"],
-        subscription,
-        admin_service.get_config(),
-        now_utc,
-    )
-    if user:
-        models.persist_user_picks(user["id"], picks + favorite_picks)
+    if user and picks:
+        models.persist_user_picks(user["id"], picks)
     if is_admin_user(user):
         if subscription.get("name", "").lower() == "vip":
-            combo_slips = app.config["PREDICTION_ENGINE"].build_magic_combinations(matches, subscription, admin_service.get_config())
+            combo_slips = prediction_engine.build_magic_combinations(matches, subscription, admin_service.get_config())
         else:
             combo_slips = []
     else:
@@ -197,7 +192,6 @@ def predictions():
 
     today = now_utc.date()
     today_picks, tomorrow_picks, later_picks = split_display_picks(picks, now_utc)
-    favorite_today_picks, favorite_tomorrow_picks, favorite_later_picks = split_display_picks(favorite_picks, now_utc)
 
     return render_template(
         "predictions.html",
@@ -205,15 +199,15 @@ def predictions():
         today_picks=today_picks,
         tomorrow_picks=tomorrow_picks,
         later_picks=later_picks,
-        favorite_today_picks=favorite_today_picks,
-        favorite_tomorrow_picks=favorite_tomorrow_picks,
-        favorite_later_picks=favorite_later_picks,
+        prediction_ready=prediction_engine.is_trained,
+        training_record_count=prediction_engine.training_record_count,
+        minimum_training_records=prediction_engine.MIN_TRAINING_RECORDS,
         combo_slips=combo_slips,
         subscription=subscription,
         leagues=app.config["DATA_SERVICE"].get_configured_leagues(),
         admin_config=admin_service.get_config(),
         is_admin=is_admin_user(user),
-        no_live_matches=not (today_picks or tomorrow_picks or later_picks or favorite_today_picks or favorite_tomorrow_picks or favorite_later_picks),
+        no_live_matches=not (today_picks or tomorrow_picks or later_picks),
     )
 
 
@@ -327,7 +321,7 @@ def register():
         except Exception as e:
             return render_template("register.html", error="Could not create account: %s" % str(e))
         session["user_id"] = user["id"]
-        return redirect(url_for("predictions"))
+        return redirect(url_for("dashboard"))
     selected_plan = request.args.get("plan", "free")
     if selected_plan not in {"free", "pro", "elite", "vip"}:
         selected_plan = "free"
@@ -354,7 +348,7 @@ def login():
         if not user:
             return render_template("login.html", error="Invalid credentials")
         session["user_id"] = user["id"]
-        return redirect(request.args.get("next") or url_for("predictions"))
+        return redirect(request.args.get("next") or url_for("dashboard"))
     return render_template("login.html")
 
 
@@ -422,6 +416,23 @@ def reset_password(token):
 def logout():
     session.pop("user_id", None)
     return redirect(url_for("index"))
+
+
+@app.route("/dashboard")
+def dashboard():
+    user = current_user()
+    if not user:
+        return redirect(url_for("login", next=url_for("dashboard")))
+
+    picks = models.get_user_picks_for_user(user["id"])
+    statuses = Counter(str(pick.get("status") or "pending").strip().lower() for pick in picks)
+    result_counts = {status: statuses[status] for status in ("won", "lost", "pending")}
+    return render_template(
+        "dashboard.html",
+        user=user,
+        picks=picks,
+        result_counts=result_counts,
+    )
 
 
 @app.route("/account", methods=["GET", "POST"])

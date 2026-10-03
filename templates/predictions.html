@@ -1,25 +1,5 @@
 {% extends 'base.html' %}
 {% block content %}
-{% macro render_pick_group(title, picks) %}
-{% if picks %}
-<div class="card">
-  <h3>{{ title }}</h3>
-</div>
-<div class="grid">
-  {% for pick in picks %}
-  <div class="card">
-    <h3>{{ pick.home_team }} vs {{ pick.away_team }}</h3>
-    <p><strong>{{ pick.league }}</strong> · {{ pick.market }} · {{ pick.sport }}</p>
-    <p>Time: {{ pick.scheduled_at or 'TBD' }}</p>
-    <p>Selection: <strong>{{ pick.selection }}</strong></p>
-    <p>Odds: {{ pick.odds }}</p>
-    <p>{{ pick.reason }}</p>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-{% endmacro %}
-
 <div class="card">
   <h2>Today's Picks</h2>
   <p>Current plan: <strong>{{ subscription.name }}</strong> · {{ subscription.duration }} · {{ subscription.max_odds }} odds max</p>
@@ -27,7 +7,7 @@
 </div>
 
 <div class="card">
-  <h3>Random Forest Final Selections</h3>
+  <h3>LSTM Final Selections</h3>
 </div>
 {% if today_picks %}
 <div class="grid">
@@ -43,7 +23,14 @@
   {% endfor %}
 </div>
 {% else %}
+{% if prediction_ready %}
 <div class="card">No picks available for today. Check back later.</div>
+{% else %}
+<div class="card">
+  <strong>LSTM is not trained yet.</strong>
+  <p>Resolved results: {{ training_record_count }} of {{ minimum_training_records }} required. Training also needs at least 15 wins and 15 losses.</p>
+</div>
+{% endif %}
 {% endif %}
 
 <div class="card">
@@ -84,16 +71,7 @@
 </div>
 {% endif %}
 
-{% if favorite_today_picks or favorite_tomorrow_picks or favorite_later_picks %}
-<div class="card">
-  <h2>Market Favorite Engine</h2>
-</div>
-{{ render_pick_group('Today', favorite_today_picks) }}
-{{ render_pick_group('Tomorrow', favorite_tomorrow_picks) }}
-{{ render_pick_group('Other Upcoming', favorite_later_picks) }}
-{% endif %}
-
-{% if not today_picks and not tomorrow_picks and not later_picks %}
+{% if prediction_ready and not today_picks and not tomorrow_picks and not later_picks %}
 <div class="card">
   <strong>No live matches available right now.</strong>
   <p>Please check back shortly as the live feed refreshes.</p>

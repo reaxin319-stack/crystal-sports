@@ -49,6 +49,18 @@
     .feed-away-team time { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
     .feed-empty { margin: 18px 0; }
     .feed-link { display: inline-block; margin-top: 14px; font-weight: 600; }
+    .dashboard-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+    .dashboard-summary > div { padding: 14px 16px; background: rgba(16, 35, 59, 0.9); border-left: 3px solid #6ee7f9; }
+    .dashboard-summary span { display: block; color: #a9bacd; font-size: 0.72rem; font-weight: 700; }
+    .dashboard-summary strong { display: block; margin-top: 5px; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+    .results-scroll { overflow-x: auto; }
+    .results-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 0.9rem; }
+    .results-table th, .results-table td { padding: 11px 10px; border-bottom: 1px solid rgba(147, 170, 196, 0.18); text-align: left; }
+    .results-table th { color: #a9bacd; font-size: 0.72rem; text-transform: uppercase; }
+    .result-badge { font-weight: 700; }
+    .result-won { color: #86efac; }
+    .result-lost { color: #fca5a5; }
+    .result-pending { color: #fcd34d; }
     @media (max-width: 860px) { .home-layout { grid-template-columns: minmax(0, 1fr); gap: 0; } }
   </style>
 </head>
@@ -61,7 +73,7 @@
         <a href="/pricing">Pricing</a> |
         <a href="/predictions">Predictions</a>
         {% if session.get('user_id') %}
-          | <a href="/logout">Sign out</a>
+          | <a href="/dashboard">Dashboard</a> | <a href="/account">Account</a> | <a href="/logout">Sign out</a>
         {% else %}
           | <a href="/login">Sign in</a> | <a href="/register">Register</a> | <a href="/admin-login">Admin Login</a>
         {% endif %}
