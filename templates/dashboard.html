@@ -8,6 +8,38 @@
   <a class="btn" href="/account" style="margin-left:8px;">Account Settings</a>
 </div>
 
+<div class="card">
+  <h3>Upcoming Picks</h3>
+  {% if upcoming_picks %}
+  <div class="results-scroll">
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Match</th>
+          <th>Market</th>
+          <th>Selection</th>
+          <th>Odds</th>
+          <th>Kickoff</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pick in upcoming_picks %}
+        <tr>
+          <td>{{ pick.home_team }} vs {{ pick.away_team }}</td>
+          <td>{{ pick.market }}</td>
+          <td>{{ pick.selection }}</td>
+          <td>{{ pick.odds }}</td>
+          <td>{{ pick.scheduled_at[:16] | replace('T', ' ') }} UTC</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p>No upcoming picks are saved yet. <a href="/predictions">View predictions</a>.</p>
+  {% endif %}
+</div>
+
 <div class="dashboard-summary" aria-label="Pick result summary">
   <div><span>WON</span><strong>{{ result_counts.won }}</strong></div>
   <div><span>LOST</span><strong>{{ result_counts.lost }}</strong></div>

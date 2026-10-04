@@ -154,10 +154,8 @@ def pricing():
     )
 
 
-@app.route("/predictions", methods=["GET", "POST"])
-def predictions():
-    user = current_user()
-
+def build_current_user_picks(user):
+    now_utc = datetime.now(timezone.utc)
     plan_name = user.get("plan", "free") if user else "free"
     expires_at = user.get("expires_at") if user else None
     admin_service = app.config["ADMIN_SERVICE"]
@@ -170,21 +168,28 @@ def predictions():
         subscription = admin_service.get_plan("free")
 
     matches = app.config["DAILY_PICK_SERVICE"].get_matches(app.config["DATA_SERVICE"])
-    now_utc = datetime.now(timezone.utc)
     prediction_engine = app.config["PREDICTION_ENGINE"]
     prediction_engine.prepare()
+    admin_config = admin_service.get_config()
     picks = build_display_picks(
         matches,
         prediction_engine,
         subscription,
-        admin_service.get_config(),
+        admin_config,
         now_utc,
     )
     if user and picks:
         models.persist_user_picks(user["id"], picks)
+    return matches, picks, subscription, prediction_engine, admin_service, admin_config, now_utc
+
+
+@app.route("/predictions", methods=["GET", "POST"])
+def predictions():
+    user = current_user()
+    matches, picks, subscription, prediction_engine, admin_service, admin_config, now_utc = build_current_user_picks(user)
     if is_admin_user(user):
         if subscription.get("name", "").lower() == "vip":
-            combo_slips = prediction_engine.build_magic_combinations(matches, subscription, admin_service.get_config())
+            combo_slips = prediction_engine.build_magic_combinations(matches, subscription, admin_config)
         else:
             combo_slips = []
     else:
@@ -205,7 +210,7 @@ def predictions():
         combo_slips=combo_slips,
         subscription=subscription,
         leagues=app.config["DATA_SERVICE"].get_configured_leagues(),
-        admin_config=admin_service.get_config(),
+        admin_config=admin_config,
         is_admin=is_admin_user(user),
         no_live_matches=not (today_picks or tomorrow_picks or later_picks),
     )
@@ -424,14 +429,31 @@ def dashboard():
     if not user:
         return redirect(url_for("login", next=url_for("dashboard")))
 
+    build_current_user_picks(user)
     picks = models.get_user_picks_for_user(user["id"])
     statuses = Counter(str(pick.get("status") or "pending").strip().lower() for pick in picks)
     result_counts = {status: statuses[status] for status in ("won", "lost", "pending")}
+    now_utc = datetime.now(timezone.utc)
+    upcoming_with_times = []
+    for pick in picks:
+        if str(pick.get("status") or "pending").strip().lower() != "pending":
+            continue
+        scheduled_at = pick.get("scheduled_at")
+        try:
+            scheduled_dt = datetime.fromisoformat(str(scheduled_at).replace("Z", "+00:00"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if scheduled_dt.tzinfo is None:
+            scheduled_dt = scheduled_dt.replace(tzinfo=timezone.utc)
+        if scheduled_dt >= now_utc:
+            upcoming_with_times.append((scheduled_dt, pick))
+    upcoming_picks = [pick for _, pick in sorted(upcoming_with_times, key=lambda item: item[0])]
     return render_template(
         "dashboard.html",
         user=user,
         picks=picks,
         result_counts=result_counts,
+        upcoming_picks=upcoming_picks,
     )
 
 

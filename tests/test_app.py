@@ -193,7 +193,7 @@ class AppRouteTests(unittest.TestCase):
             {"home_team": "Team A", "away_team": "Team B", "market": "WLD", "selection": "draw", "odds": 3.2, "scheduled_at": "2026-10-02", "status": "lost"},
             {"home_team": "Player A", "away_team": "Player B", "market": "Who Wins Set", "selection": "Player A", "odds": 2.0, "scheduled_at": "2026-10-03", "status": "pending"},
         ]
-        with patch("app.current_user", return_value=user), patch(
+        with patch("app.current_user", return_value=user), patch("app.build_current_user_picks") as build_picks, patch(
             "app.models.get_user_picks_for_user", return_value=picks
         ) as get_picks:
             with self.client.session_transaction() as session:
@@ -210,6 +210,7 @@ class AppRouteTests(unittest.TestCase):
         self.assertIn(b"Dashboard", response.data)
         self.assertIn(b"Account", response.data)
         self.assertEqual(response.data.count(b"<strong>1</strong>"), 3)
+        build_picks.assert_called_once_with(user)
         get_picks.assert_called_once_with(user["id"])
 
     def test_dashboard_requires_login(self) -> None:
@@ -218,6 +219,91 @@ class AppRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.location, "/login?next=/dashboard")
+
+    def test_dashboard_separates_future_pending_picks_from_history(self) -> None:
+        future_time = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+        past_time = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        picks = [
+            {"home_team": "Upcoming Home", "away_team": "Upcoming Away", "market": "WLD", "selection": "home", "odds": 1.8, "scheduled_at": future_time, "status": "pending"},
+            {"home_team": "Past Home", "away_team": "Past Away", "market": "WLD", "selection": "away", "odds": 2.1, "scheduled_at": past_time, "status": "pending"},
+            {"home_team": "Settled Home", "away_team": "Settled Away", "market": "WLD", "selection": "home", "odds": 1.9, "scheduled_at": future_time, "status": "won"},
+        ]
+        with patch("app.current_user", return_value={"id": 7, "username": "demo"}), patch("app.build_current_user_picks"), patch(
+            "app.models.get_user_picks_for_user", return_value=picks
+        ):
+            response = self.client.get("/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        upcoming_section = response.get_data(as_text=True).split("<h3>Pick History</h3>")[0]
+        self.assertIn("Upcoming Home vs Upcoming Away", upcoming_section)
+        self.assertNotIn("Past Home vs Past Away", upcoming_section)
+        self.assertNotIn("Settled Home vs Settled Away", upcoming_section)
+        self.assertIn("Past Home vs Past Away", response.get_data(as_text=True))
+        self.assertIn("Settled Home vs Settled Away", response.get_data(as_text=True))
+
+    def test_dashboard_generates_and_saves_upcoming_picks_on_first_visit(self) -> None:
+        match_time = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+        match = {
+            "home_team": "Upcoming FC",
+            "away_team": "Visitor FC",
+            "league": "Premier League",
+            "sport": "soccer",
+            "market": "WLD",
+            "odds": {"home": 2.0, "draw": 3.5, "away": 4.0},
+            "scheduled_at": match_time,
+        }
+        saved_pick = {
+            **match,
+            "selection": "home",
+            "odds": 2.0,
+            "status": "pending",
+        }
+
+        class TestDataService:
+            def get_live_matches(self):
+                return [match]
+
+        class TestDailyPickService:
+            def get_matches(self, _data_service):
+                return [match]
+
+        class TestAdminService:
+            def get_plan(self, _plan_name):
+                return {
+                    "name": "Free",
+                    "max_odds": 1,
+                    "allowed_sports": ["soccer"],
+                    "allowed_markets": ["WLD"],
+                }
+
+            def get_config(self):
+                return {"allowed_markets": {"soccer": ["WLD"]}}
+
+        class TestSubscriptionService:
+            def is_active(self, _plan_name, _expires_at):
+                return True
+
+        user = {"id": 31, "username": "first-visit", "plan": "free"}
+        with patch("app.current_user", return_value=user), patch(
+            "app.models.persist_user_picks"
+        ) as persist_picks, patch(
+            "app.models.get_user_picks_for_user", return_value=[saved_pick]
+        ), patch.dict(
+            app.config,
+            {
+                "DATA_SERVICE": TestDataService(),
+                "DAILY_PICK_SERVICE": TestDailyPickService(),
+                "ADMIN_SERVICE": TestAdminService(),
+                "SUBSCRIPTION_SERVICE": TestSubscriptionService(),
+                "PREDICTION_ENGINE": LSTMPredictionEngine(history_provider=lambda: []),
+            },
+        ):
+            response = self.client.get("/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Upcoming FC vs Visitor FC", response.data)
+        self.assertIn("Dixon-Coles soccer fallback", persist_picks.call_args.args[1][0]["reason"])
+        persist_picks.assert_called_once_with(user["id"], persist_picks.call_args.args[1])
 
     def test_results_page_calculates_win_rate_from_settled_picks(self) -> None:
         user = {"id": 7, "username": "demo"}
