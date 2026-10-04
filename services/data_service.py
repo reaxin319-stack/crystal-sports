@@ -312,6 +312,12 @@ class DataService:
             return "tennis"
         if any(token in text for token in ["hockey", "nhl", "ice"]):
             return "hockey"
+        if any(token in text for token in ["basketball", "nba"]):
+            return "basketball"
+        if any(token in text for token in ["baseball", "mlb"]):
+            return "baseball"
+        if any(token in text for token in ["american football", "nfl"]):
+            return "football"
         return "soccer"
 
     def _guess_market(self, item: Dict[str, Any]) -> str:

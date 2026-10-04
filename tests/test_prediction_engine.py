@@ -43,14 +43,44 @@ class LSTMPredictionEngineTests(unittest.TestCase):
             )
         return history
 
-    def test_no_resolved_history_returns_no_untrained_picks(self) -> None:
+    def test_no_resolved_history_uses_dixon_coles_soccer_fallback(self) -> None:
         engine = LSTMPredictionEngine(history_provider=lambda: [])
 
         picks = engine.build_slips([self.match], self.subscription, self.admin_config)
 
-        self.assertEqual(picks, [])
+        self.assertTrue(picks)
         self.assertFalse(engine.is_trained)
         self.assertEqual(engine.training_record_count, 0)
+        self.assertIn("Dixon-Coles soccer fallback", picks[0]["reason"])
+
+    def test_dixon_coles_fallback_supports_goal_lines(self) -> None:
+        match = {
+            **self.match,
+            "market": "Over/Under",
+            "odds": {
+                "over_1_5": 1.4,
+                "under_1_5": 3.0,
+                "over_2_5": 1.8,
+                "under_2_5": 2.0,
+            },
+        }
+        subscription = {**self.subscription, "allowed_markets": ["Over/Under"]}
+        admin_config = {"allowed_markets": {"soccer": ["Over/Under"]}}
+        engine = LSTMPredictionEngine(history_provider=lambda: [])
+
+        picks = engine.build_slips([match], subscription, admin_config)
+
+        self.assertTrue(picks)
+        self.assertIn("Goals", picks[0]["selection"])
+        self.assertIn("Dixon-Coles soccer fallback", picks[0]["reason"])
+
+    def test_dixon_coles_fallback_does_not_predict_other_sports(self) -> None:
+        match = {**self.match, "sport": "hockey"}
+        subscription = {**self.subscription, "allowed_sports": ["hockey"]}
+        admin_config = {"allowed_markets": {"hockey": ["WLD"]}}
+        engine = LSTMPredictionEngine(history_provider=lambda: [])
+
+        self.assertEqual(engine.build_slips([match], subscription, admin_config), [])
 
     def test_lstm_selects_learned_outcome_from_ordered_history(self) -> None:
         engine = LSTMPredictionEngine(history_provider=self._resolved_history)

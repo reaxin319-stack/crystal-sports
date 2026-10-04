@@ -26,8 +26,9 @@ The first visit to the predictions page each UTC day automatically generates tha
 The predictions page uses one PyTorch LSTM sequence model trained from picks
 marked Won or Lost by an administrator. It starts producing picks after at least
 40 resolved results are available, including at least 15 wins and 15 losses.
-Until then it shows a training-status message and does not fall back to another
-prediction model. Resolved results are ordered by scheduled match time.
+Until then it uses a Dixon-Coles soccer fallback calibrated from available
+market odds; it does not apply that soccer model to other sports. Resolved
+results are ordered by scheduled match time.
 The Results page reports pick success rate as wins divided by wins plus losses;
 pending picks are excluded from the calculation.
 

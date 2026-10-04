@@ -7,8 +7,14 @@
 </div>
 
 <div class="card">
-  <h3>LSTM Final Selections</h3>
+  <h3>{% if prediction_ready %}LSTM{% else %}Dixon-Coles Fallback{% endif %} Final Selections</h3>
 </div>
+{% if not prediction_ready %}
+<div class="card">
+  <strong>Dixon-Coles soccer fallback active.</strong>
+  <p>Market-calibrated score probabilities are used while the LSTM collects resolved results ({{ training_record_count }}/{{ minimum_training_records }}).</p>
+</div>
+{% endif %}
 {% if today_picks %}
 <div class="grid">
   {% for pick in today_picks %}
@@ -27,8 +33,8 @@
 <div class="card">No picks available for today. Check back later.</div>
 {% else %}
 <div class="card">
-  <strong>LSTM is not trained yet.</strong>
-  <p>Resolved results: {{ training_record_count }} of {{ minimum_training_records }} required. Training also needs at least 15 wins and 15 losses.</p>
+  <strong>No Dixon-Coles soccer picks are available for this slate.</strong>
+  <p>The LSTM needs {{ minimum_training_records }} resolved picks, including at least 15 wins and 15 losses.</p>
 </div>
 {% endif %}
 {% endif %}

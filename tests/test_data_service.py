@@ -19,6 +19,13 @@ class FixtureSelectionEngine:
 
 
 class DataServiceScheduleTests(unittest.TestCase):
+    def test_non_soccer_scoreboards_are_not_mislabeled_as_soccer(self) -> None:
+        service = DataService()
+
+        self.assertEqual(service._guess_sport("NBA", None, None), "basketball")
+        self.assertEqual(service._guess_sport("MLB", None, None), "baseball")
+        self.assertEqual(service._guess_sport("NFL", None, None), "football")
+
     def test_goal_total_odds_keep_15_and_25_lines_distinct(self) -> None:
         service = DataService()
         match = service._build_match_from_payload(

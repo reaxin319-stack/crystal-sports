@@ -7,6 +7,8 @@ from typing import Any, Callable, Dict, List
 import torch
 from torch import nn
 
+from services.dixon_coles import DixonColesFallback
+
 
 FEATURE_SIZE = 34
 SEQUENCE_LENGTH = 5
@@ -67,6 +69,7 @@ class LSTMPredictionEngine:
         self.history_provider = history_provider
         self._training_signature = None
         self._model: _OutcomeLSTM | None = None
+        self._dixon_coles = DixonColesFallback()
         self._history_features: List[List[float]] = []
         self.training_record_count = 0
 
@@ -143,7 +146,13 @@ class LSTMPredictionEngine:
         admin_config: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         if not self.prepare():
-            return []
+            return self._dixon_coles.build_slips(
+                matches,
+                subscription,
+                admin_config,
+                self.training_record_count,
+                self.MIN_TRAINING_RECORDS,
+            )
 
         max_picks = int(subscription.get("max_odds", 3) or 0)
         if max_picks <= 0:

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from app import app
+from services.daily_picks import DailyPickService
 from services.lstm_prediction_engine import LSTMPredictionEngine
 
 
@@ -51,7 +52,7 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Predictions", response.data)
 
-    def test_predictions_page_shows_lstm_untrained_state(self) -> None:
+    def test_predictions_page_shows_dixon_coles_fallback(self) -> None:
         match = {
             "home_team": "Home FC",
             "away_team": "Away FC",
@@ -86,6 +87,7 @@ class AppRouteTests(unittest.TestCase):
             app.config,
             {
                 "DATA_SERVICE": TestDataService(),
+                "DAILY_PICK_SERVICE": DailyPickService(),
                 "ADMIN_SERVICE": TestAdminService(),
                 "PREDICTION_ENGINE": LSTMPredictionEngine(history_provider=lambda: []),
             },
@@ -93,8 +95,9 @@ class AppRouteTests(unittest.TestCase):
             response = self.client.get("/predictions")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"LSTM Final Selections", response.data)
-        self.assertIn(b"LSTM is not trained yet.", response.data)
+        self.assertIn(b"Dixon-Coles Fallback Final Selections", response.data)
+        self.assertIn(b"Dixon-Coles soccer fallback active.", response.data)
+        self.assertIn(b"Selection: <strong>home</strong>", response.data)
 
     def test_register_requires_username_email_and_password(self) -> None:
         created_user = {"id": 42, "email": "new@example.com"}
@@ -254,12 +257,12 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.location, "/login?next=/results")
 
-    def test_predictions_page_does_not_persist_until_lstm_trained(self) -> None:
+    def test_predictions_page_persists_dixon_coles_fallback_picks(self) -> None:
         match = {
             "home_team": "Bears",
             "away_team": "Wolves",
-            "league": "NHL",
-            "sport": "hockey",
+            "league": "Premier League",
+            "sport": "soccer",
             "market": "WLD",
             "odds": {"home": 2.1, "draw": 3.5, "away": 2.8},
             "scheduled_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
@@ -278,18 +281,19 @@ class AppRouteTests(unittest.TestCase):
                     "name": "Free",
                     "duration": "1 month",
                     "max_odds": 3,
-                    "allowed_sports": ["hockey"],
+                    "allowed_sports": ["soccer"],
                     "allowed_markets": ["WLD"],
                 }
 
             def get_config(self):
-                return {"allowed_markets": {"hockey": ["WLD"]}}
+                return {"allowed_markets": {"soccer": ["WLD"]}}
 
         user = {"id": 9, "plan": "free"}
         with patch("app.current_user", return_value=user), patch.dict(
             app.config,
             {
                 "DATA_SERVICE": TestDataService(),
+                "DAILY_PICK_SERVICE": DailyPickService(),
                 "ADMIN_SERVICE": TestAdminService(),
                 "PREDICTION_ENGINE": LSTMPredictionEngine(history_provider=lambda: []),
             },
@@ -297,7 +301,9 @@ class AppRouteTests(unittest.TestCase):
             response = self.client.get("/predictions")
 
         self.assertEqual(response.status_code, 200)
-        persist_user_picks.assert_not_called()
+        persist_user_picks.assert_called_once()
+        self.assertEqual(persist_user_picks.call_args.args[0], 9)
+        self.assertIn("Dixon-Coles soccer fallback", persist_user_picks.call_args.args[1][0]["reason"])
 
     def test_admin_can_update_pick_result_status(self) -> None:
         user = {"id": 99, "is_admin": 1}
