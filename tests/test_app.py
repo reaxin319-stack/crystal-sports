@@ -364,7 +364,13 @@ class AppRouteTests(unittest.TestCase):
     def test_results_page_calculates_win_rate_from_settled_picks(self) -> None:
         user = {"id": 7, "username": "demo"}
         picks = [
-            {"home_team": "Home 1", "away_team": "Away 1", "status": "won"},
+            {
+                "home_team": "Home 1",
+                "away_team": "Away 1",
+                "market": "Match Winner",
+                "selection": "Home 1 to win",
+                "status": "won",
+            },
             {"home_team": "Home 2", "away_team": "Away 2", "status": "won"},
             {"home_team": "Home 3", "away_team": "Away 3", "status": "lost"},
             {"home_team": "Home 4", "away_team": "Away 4", "status": "pending"},
@@ -378,8 +384,12 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"66.7%", response.data)
         self.assertIn(b"2 / 1", response.data)
-        self.assertIn(b"Pick Results History", response.data)
-        self.assertIn(b"pending", response.data)
+        self.assertIn(b"Your Picks &amp; Updated Results", response.data)
+        self.assertIn(b"Your Pick", response.data)
+        self.assertIn(b"Updated Result", response.data)
+        self.assertIn(b"Home 1 to win", response.data)
+        self.assertIn(b"Won", response.data)
+        self.assertIn(b"Pending", response.data)
         get_picks.assert_called_once_with(user["id"])
 
     def test_results_page_shows_no_rate_without_settled_picks(self) -> None:
