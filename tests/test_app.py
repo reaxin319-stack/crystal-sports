@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from app import app
+from app import app, generate_daily_picks_for_all_users
 from services.daily_picks import DailyPickService
 from services.lstm_prediction_engine import LSTMPredictionEngine
 
@@ -304,6 +304,62 @@ class AppRouteTests(unittest.TestCase):
         self.assertIn(b"Upcoming FC vs Visitor FC", response.data)
         self.assertIn("Dixon-Coles soccer fallback", persist_picks.call_args.args[1][0]["reason"])
         persist_picks.assert_called_once_with(user["id"], persist_picks.call_args.args[1])
+
+    def test_scheduled_generation_refreshes_all_leagues_for_each_plan(self) -> None:
+        scheduled_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+        matches = [
+            {"home_team": "League One Home", "away_team": "League One Away", "league": "Premier League", "sport": "soccer", "market": "WLD", "odds": {"home": 2.0, "draw": 3.5, "away": 4.0}, "scheduled_at": scheduled_at},
+            {"home_team": "League Two Home", "away_team": "League Two Away", "league": "Serie A", "sport": "soccer", "market": "WLD", "odds": {"home": 2.1, "draw": 3.4, "away": 3.8}, "scheduled_at": scheduled_at},
+        ]
+
+        class TestDataService:
+            calls = 0
+
+            def get_live_matches(self):
+                self.calls += 1
+                return matches
+
+        class TestAdminService:
+            def get_plan(self, plan_name):
+                return {"name": plan_name, "max_odds": 1 if plan_name == "free" else 2, "allowed_sports": ["soccer"], "allowed_markets": ["WLD"]}
+
+            def get_config(self):
+                return {"allowed_markets": {"soccer": ["WLD"]}}
+
+        class TestSubscriptionService:
+            def is_active(self, _plan_name, _expires_at):
+                return True
+
+        data_service = TestDataService()
+        users = [
+            {"id": 10, "plan": "free", "is_admin": 0},
+            {"id": 11, "plan": "pro", "is_admin": 0},
+        ]
+        with patch.dict(
+            app.config,
+            {
+                "DATA_SERVICE": data_service,
+                "DAILY_PICK_SERVICE": DailyPickService(),
+                "ADMIN_SERVICE": TestAdminService(),
+                "SUBSCRIPTION_SERVICE": TestSubscriptionService(),
+                "PREDICTION_ENGINE": LSTMPredictionEngine(history_provider=lambda: []),
+            },
+        ), patch("app.models.get_users_for_daily_picks", return_value=users), patch(
+            "app.models.persist_user_picks"
+        ) as persist_picks:
+            generated_count = generate_daily_picks_for_all_users()
+
+        self.assertEqual(data_service.calls, 1)
+        self.assertEqual(generated_count, 3)
+        self.assertEqual(persist_picks.call_count, 2)
+        self.assertEqual([len(call.args[1]) for call in persist_picks.call_args_list], [1, 2])
+        self.assertTrue(
+            all(
+                pick["league"] in {"Premier League", "Serie A"}
+                for call in persist_picks.call_args_list
+                for pick in call.args[1]
+            )
+        )
 
     def test_results_page_calculates_win_rate_from_settled_picks(self) -> None:
         user = {"id": 7, "username": "demo"}

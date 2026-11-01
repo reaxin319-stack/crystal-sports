@@ -1,0 +1,23 @@
+name: Prepare daily picks
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wake-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wake Crystal Sports before daily generation
+        env:
+          APP_URL: ${{ vars.CRYSTAL_SPORTS_URL || 'https://crystal-sports.onrender.com' }}
+        run: |
+          curl --fail --silent --show-error \
+            --retry 8 --retry-all-errors --retry-delay 15 --max-time 300 \
+            "${APP_URL%/}/login" \
+            --output /dev/null

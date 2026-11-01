@@ -413,6 +413,16 @@ def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     return dict(row)
 
 
+def get_users_for_daily_picks() -> list[Dict[str, Any]]:
+    init_db()
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, username, plan, expires_at, is_admin FROM users ORDER BY id")
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def verify_user(username: str, password: str) -> Optional[Dict[str, Any]]:
     user = get_user_by_username(username)
     if not user:

@@ -16,7 +16,7 @@ from flask import Flask, redirect, render_template, request, session, url_for
 
 from services.admin_service import AdminConfigService
 from services.data_service import DataService
-from services.daily_picks import DailyPickService
+from services.daily_picks import DailyPickService, create_daily_pick_scheduler
 from services.lstm_prediction_engine import LSTMPredictionEngine
 from services.subscription import SubscriptionService
 import models
@@ -181,6 +181,28 @@ def build_current_user_picks(user):
     if user and picks:
         models.persist_user_picks(user["id"], picks)
     return matches, picks, subscription, prediction_engine, admin_service, admin_config, now_utc
+
+
+def generate_daily_picks_for_all_users():
+    app.config["DAILY_PICK_SERVICE"].refresh(app.config["DATA_SERVICE"])
+    generated_count = 0
+    for user in models.get_users_for_daily_picks():
+        try:
+            _, picks, *_ = build_current_user_picks(user)
+            generated_count += len(picks)
+        except Exception:
+            app.logger.exception("Daily pick generation failed for user %s", user.get("id"))
+    return generated_count
+
+
+def start_daily_pick_scheduler():
+    scheduler = create_daily_pick_scheduler(generate_daily_picks_for_all_users)
+    scheduler.start()
+    return scheduler
+
+
+if __name__ != "__main__" or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    app.config["DAILY_PICK_SCHEDULER"] = start_daily_pick_scheduler()
 
 
 @app.route("/predictions", methods=["GET", "POST"])

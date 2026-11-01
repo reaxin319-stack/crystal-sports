@@ -18,7 +18,9 @@ Crystal Sports is a Python-based sports prediction framework for showing daily p
 
 ## Automatic daily picks
 
-The first visit to the predictions page each UTC day automatically generates that day's shared match set. The set is reused for subsequent requests in the running app, while subscription plans still control which picks each user can see. An administrator can regenerate the current day's set from the Admin Control Panel when the live feed changes.
+The app schedules a shared multi-league fixture refresh at 04:00 UTC each day and generates plan-allowed picks for every user. If the process starts between 04:00 and 06:00 UTC, it catches up immediately. User requests also generate picks on demand. The `Prepare daily picks` GitHub Actions workflow pings the Render login page at 04:00 UTC to wake the free web service and start the scheduler.
+
+The scheduler runs inside the web process. GitHub scheduled workflows can be delayed or disabled, so verify the workflow is enabled if unattended pre-06:00 UTC generation is required.
 
 ## Live data setup
 ## LSTM predictions

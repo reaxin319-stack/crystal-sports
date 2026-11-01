@@ -86,3 +86,18 @@ class ModelDefaultsTests(unittest.TestCase):
                 picks = models.get_resolved_user_picks()
 
         self.assertEqual({pick["status"] for pick in picks}, {"won", "lost"})
+
+    def test_daily_pick_recipients_include_only_non_secret_user_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "users.db")
+            with patch.object(models, "DB_PATH", db_path):
+                first = models.create_user("member_one", "one@example.com", "secure-password")
+                second = models.create_user("member_two", "two@example.com", "secure-password", "pro")
+
+                users = models.get_users_for_daily_picks()
+
+        returned_ids = {user["id"] for user in users}
+        returned_usernames = {user["username"] for user in users}
+        self.assertTrue({first["id"], second["id"]}.issubset(returned_ids))
+        self.assertTrue({"member_one", "member_two"}.issubset(returned_usernames))
+        self.assertTrue(all("password_hash" not in user for user in users))
