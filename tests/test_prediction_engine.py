@@ -74,13 +74,53 @@ class LSTMPredictionEngineTests(unittest.TestCase):
         self.assertIn("Goals", picks[0]["selection"])
         self.assertIn("Dixon-Coles soccer fallback", picks[0]["reason"])
 
-    def test_dixon_coles_fallback_does_not_predict_other_sports(self) -> None:
+    def test_market_implied_fallback_predicts_hockey(self) -> None:
         match = {**self.match, "sport": "hockey"}
         subscription = {**self.subscription, "allowed_sports": ["hockey"]}
         admin_config = {"allowed_markets": {"hockey": ["WLD"]}}
         engine = LSTMPredictionEngine(history_provider=lambda: [])
 
-        self.assertEqual(engine.build_slips([match], subscription, admin_config), [])
+        picks = engine.build_slips([match], subscription, admin_config)
+
+        self.assertEqual(len(picks), 1)
+        self.assertIn(picks[0]["selection"], {"home", "draw", "away"})
+        self.assertIn("Market-implied fallback", picks[0]["reason"])
+
+    def test_market_implied_fallback_supports_tennis_winner_market(self) -> None:
+        match = {
+            **self.match,
+            "sport": "tennis",
+            "market": "Who Wins Set",
+            "odds": {"player_a": 1.8, "player_b": 2.05},
+        }
+        subscription = {
+            **self.subscription,
+            "allowed_sports": ["tennis"],
+            "allowed_markets": ["Who Wins Set"],
+        }
+        admin_config = {"allowed_markets": {"tennis": ["Who Wins Set"]}}
+        engine = LSTMPredictionEngine(history_provider=lambda: [])
+
+        picks = engine.build_slips([match], subscription, admin_config)
+
+        self.assertEqual(len(picks), 1)
+        self.assertEqual(picks[0]["selection"], "Player A")
+        self.assertEqual(picks[0]["odds"], 1.8)
+
+    def test_market_implied_fallback_supports_cards_market(self) -> None:
+        match = {
+            **self.match,
+            "market": "Cards",
+            "odds": {"cards_over": 1.8, "cards_under": 1.9},
+        }
+        subscription = {**self.subscription, "allowed_markets": ["Cards"]}
+        admin_config = {"allowed_markets": {"soccer": ["Cards"]}}
+        engine = LSTMPredictionEngine(history_provider=lambda: [])
+
+        picks = engine.build_slips([match], subscription, admin_config)
+
+        self.assertEqual(len(picks), 1)
+        self.assertEqual(picks[0]["selection"], "Over Cards")
 
     def test_lstm_selects_learned_outcome_from_ordered_history(self) -> None:
         engine = LSTMPredictionEngine(history_provider=self._resolved_history)

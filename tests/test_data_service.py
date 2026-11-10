@@ -53,6 +53,20 @@ class DataServiceScheduleTests(unittest.TestCase):
             {"over_1_5": 1.35, "under_1_5": 3.1, "over_2_5": 1.9, "under_2_5": 1.95},
         )
 
+    def test_tennis_fallback_odds_select_tennis_market(self) -> None:
+        match = DataService()._build_match_from_payload(
+            {
+                "home_team": "Player A",
+                "away_team": "Player B",
+                "league": "ATP",
+                "sport": "tennis",
+            }
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match["market"], "Who Wins Set")
+        self.assertEqual(match["odds"], {"player_a": 1.8, "player_b": 2.05})
+
     def test_matches_include_future_schedule_at_least_three_hours_ahead(self) -> None:
         service = DataService()
         matches = service.get_live_matches()

@@ -145,44 +145,60 @@ class LSTMPredictionEngine:
         subscription: Dict[str, Any],
         admin_config: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
+        max_picks = int(subscription.get("max_odds", 3) or 0)
+        if max_picks <= 0:
+            return []
+
         if not self.prepare():
-            return self._dixon_coles.build_slips(
+            picks = self._dixon_coles.build_slips(
                 matches,
                 subscription,
                 admin_config,
                 self.training_record_count,
                 self.MIN_TRAINING_RECORDS,
             )
+        else:
+            picks = []
+            for match in matches:
+                if not self._is_allowed(match, subscription, admin_config):
+                    continue
+                candidates = self._build_candidates(match)
+                if not candidates:
+                    continue
 
-        max_picks = int(subscription.get("max_odds", 3) or 0)
-        if max_picks <= 0:
-            return []
+                sequences = [
+                    self._candidate_sequence(features)
+                    for _, features in candidates
+                ]
+                with torch.no_grad():
+                    logits = self._model(torch.tensor(sequences, dtype=torch.float32))
+                    probabilities = torch.sigmoid(logits).tolist()
+                selected_index = max(range(len(candidates)), key=probabilities.__getitem__)
+                pick = candidates[selected_index][0]
+                pick["reason"] = (
+                    "LSTM sequence model selected the highest predicted win probability "
+                    f"({probabilities[selected_index]:.0%})."
+                )
+                picks.append(pick)
+                if len(picks) >= max_picks:
+                    break
 
-        picks = []
-        for match in matches:
-            if not self._is_allowed(match, subscription, admin_config):
-                continue
-            candidates = self._build_candidates(match)
-            if not candidates:
-                continue
-
-            sequences = [
-                self._candidate_sequence(features)
-                for _, features in candidates
+        if len(picks) < max_picks:
+            picked_fixtures = {self._fixture_identity(pick) for pick in picks}
+            fallback_matches = [
+                match
+                for match in matches
+                if self._fixture_identity(match) not in picked_fixtures
             ]
-            with torch.no_grad():
-                logits = self._model(torch.tensor(sequences, dtype=torch.float32))
-                probabilities = torch.sigmoid(logits).tolist()
-            selected_index = max(range(len(candidates)), key=probabilities.__getitem__)
-            pick = candidates[selected_index][0]
-            pick["reason"] = (
-                "LSTM sequence model selected the highest predicted win probability "
-                f"({probabilities[selected_index]:.0%})."
+            picks.extend(
+                self._build_market_implied_slips(
+                    fallback_matches,
+                    subscription,
+                    admin_config,
+                    max_picks - len(picks),
+                )
             )
-            picks.append(pick)
-            if len(picks) >= max_picks:
-                break
-        return picks
+        return picks[:max_picks]
 
     def build_magic_combinations(
         self,
@@ -214,6 +230,59 @@ class LSTMPredictionEngine:
         import models
 
         return models.get_resolved_user_picks()
+
+    def _build_market_implied_slips(
+        self,
+        matches: List[Dict[str, Any]],
+        subscription: Dict[str, Any],
+        admin_config: Dict[str, Any],
+        max_picks: int,
+    ) -> List[Dict[str, Any]]:
+        picks = []
+        for match in matches:
+            if not self._is_allowed(match, subscription, admin_config):
+                continue
+            market = match.get("market", "WLD")
+            odds = match.get("odds") or {}
+            candidates = [
+                (selection, float(price))
+                for odds_key, selection in _available_market_outcomes(market, odds)
+                if _valid_price(price := odds.get(odds_key))
+            ]
+            if not candidates:
+                continue
+
+            total_implied_probability = sum(1 / price for _, price in candidates)
+            selection, selected_odds = max(candidates, key=lambda candidate: 1 / candidate[1])
+            probability = (1 / selected_odds) / total_implied_probability
+            picks.append(
+                {
+                    "league": match.get("league", "Unknown"),
+                    "sport": match.get("sport", "soccer"),
+                    "home_team": match.get("home_team"),
+                    "away_team": match.get("away_team"),
+                    "market": market,
+                    "selection": selection,
+                    "odds": selected_odds,
+                    "scheduled_at": match.get("scheduled_at"),
+                    "reason": (
+                        "Market-implied fallback selected the highest normalized "
+                        f"outcome probability ({probability:.0%}) from available odds."
+                    ),
+                }
+            )
+            if len(picks) >= max_picks:
+                break
+        return picks
+
+    @staticmethod
+    def _fixture_identity(match: Dict[str, Any]) -> tuple[str, str, str, str]:
+        return (
+            str(match.get("sport") or "soccer").strip().casefold(),
+            str(match.get("home_team") or "").strip().casefold(),
+            str(match.get("away_team") or "").strip().casefold(),
+            str(match.get("scheduled_at") or "").strip(),
+        )
 
     def _candidate_sequence(self, features: List[float]) -> List[List[float]]:
         prior_features = self._history_features[-(SEQUENCE_LENGTH - 1) :]

@@ -6,13 +6,17 @@
   ],
   "allowed_markets": {
     "soccer": [
-      "WLD"
+      "WLD",
+      "Over/Under",
+      "Cards"
     ],
     "hockey": [
-      "WLD"
+      "WLD",
+      "Over/Under"
     ],
     "tennis": [
-      "WLD"
+      "WLD",
+      "Who Wins Set"
     ]
   },
   "plans": {

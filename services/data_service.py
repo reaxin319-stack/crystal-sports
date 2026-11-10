@@ -254,6 +254,8 @@ class DataService:
 
         if not odds:
             return None
+        if market == "WLD" and {"player_a", "player_b"}.issubset(odds):
+            market = "Who Wins Set"
 
         home_score, away_score = self._extract_scores(item)
         status, status_detail, is_live = self._extract_status(item)
