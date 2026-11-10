@@ -423,12 +423,18 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"66.7%", response.data)
         self.assertIn(b"2 / 1", response.data)
-        self.assertIn(b"Your Picks &amp; Updated Results", response.data)
+        self.assertIn(b"Previous Picks &amp; Results", response.data)
+        self.assertIn(b"Settled History", response.data)
+        self.assertIn(b"Pending Picks", response.data)
         self.assertIn(b"Your Pick", response.data)
         self.assertIn(b"Updated Result", response.data)
         self.assertIn(b"Home 1 to win", response.data)
         self.assertIn(b"Won", response.data)
         self.assertIn(b"Pending", response.data)
+        self.assertLess(
+            response.data.index(b"Settled History"),
+            response.data.index(b"Pending Picks"),
+        )
         get_picks.assert_called_once_with(user["id"])
 
     def test_results_page_shows_no_rate_without_settled_picks(self) -> None:
@@ -440,6 +446,7 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"N/A", response.data)
         self.assertIn(b"Pending", response.data)
+        self.assertIn(b"No settled picks yet.", response.data)
 
     def test_results_page_requires_login(self) -> None:
         with patch("app.current_user", return_value=None):

@@ -517,10 +517,22 @@ def results():
 
     picks = models.get_user_picks_for_user(user["id"])
     result_counts, settled_count, success_rate = summarize_pick_results(picks)
+    settled_picks = [
+        pick
+        for pick in picks
+        if str(pick.get("status") or "pending").strip().lower() in {"won", "lost"}
+    ]
+    pending_picks = [
+        pick
+        for pick in picks
+        if str(pick.get("status") or "pending").strip().lower() not in {"won", "lost"}
+    ]
     return render_template(
         "results.html",
         user=user,
         picks=picks,
+        settled_picks=settled_picks,
+        pending_picks=pending_picks,
         result_counts=result_counts,
         settled_count=settled_count,
         success_rate=success_rate,

@@ -19,7 +19,7 @@
 </div>
 
 <div class="card">
-  <h3>Your Picks &amp; Updated Results</h3>
+  <h3>Previous Picks &amp; Results</h3>
   {% if picks %}
   <div class="results-scroll">
     <table class="results-table">
@@ -34,7 +34,9 @@
         </tr>
       </thead>
       <tbody>
-        {% for pick in picks %}
+        {% if settled_picks %}
+        <tr><th colspan="6">Settled History</th></tr>
+        {% for pick in settled_picks %}
         {% set status = (pick.status or 'pending')|lower %}
         <tr>
           <td>{{ pick.home_team }} vs {{ pick.away_team }}</td>
@@ -45,11 +47,27 @@
           <td><span class="result-badge result-{{ status }}">{{ status|title }}</span></td>
         </tr>
         {% endfor %}
+        {% else %}
+        <tr><td colspan="6">No settled picks yet.</td></tr>
+        {% endif %}
+        {% if pending_picks %}
+        <tr><th colspan="6">Pending Picks</th></tr>
+        {% for pick in pending_picks %}
+        <tr>
+          <td>{{ pick.home_team }} vs {{ pick.away_team }}</td>
+          <td>{{ pick.market }}</td>
+          <td>{{ pick.selection }}</td>
+          <td>{{ pick.odds }}</td>
+          <td>{{ pick.scheduled_at or 'TBC' }}</td>
+          <td><span class="result-badge result-pending">Pending</span></td>
+        </tr>
+        {% endfor %}
+        {% endif %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p>No pick results yet. Once you save picks, their outcomes will appear here.</p>
+  <p>No picks saved yet. Your previous picks and their results will appear here.</p>
   {% endif %}
 </div>
 {% endblock %}
