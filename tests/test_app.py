@@ -52,6 +52,45 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Predictions", response.data)
 
+    def test_predictions_page_shows_recent_results_and_win_rate(self) -> None:
+        user = {"id": 77, "username": "demo"}
+        history_picks = [
+            {
+                "home_team": "Won Home",
+                "away_team": "Won Away",
+                "selection": "Won Home",
+                "status": "won",
+            },
+            {
+                "home_team": "Lost Home",
+                "away_team": "Lost Away",
+                "selection": "Lost Away",
+                "status": "lost",
+            },
+            {"home_team": "Pending Home", "away_team": "Pending Away", "status": "pending"},
+        ]
+        subscription = {"name": "Free", "duration": "1 month", "max_odds": 3}
+
+        class TestPredictionEngine:
+            is_trained = True
+            training_record_count = 30
+            MIN_TRAINING_RECORDS = 30
+
+        with patch("app.current_user", return_value=user), patch(
+            "app.build_current_user_picks",
+            return_value=([], [], subscription, TestPredictionEngine(), None, {}, datetime.now(timezone.utc)),
+        ), patch("app.models.get_user_picks_for_user", return_value=history_picks) as get_picks:
+            response = self.client.get("/predictions")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Recent Pick Results", response.data)
+        self.assertIn(b"50.0%", response.data)
+        self.assertIn(b"Won Home vs Won Away", response.data)
+        self.assertIn(b">Won</span>", response.data)
+        self.assertIn(b"View full results history", response.data)
+        self.assertNotIn(b"Pending Home vs Pending Away", response.data)
+        get_picks.assert_called_once_with(user["id"])
+
     def test_predictions_page_shows_dixon_coles_fallback(self) -> None:
         match = {
             "home_team": "Home FC",

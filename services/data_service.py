@@ -116,6 +116,10 @@ class DataService:
             "esp.1": "La Liga",
             "ita.1": "Serie A",
             "usa.1": "MLS",
+            "fifa.world": "FIFA World Cup",
+            "fifa.friendly": "International Friendly",
+            "fifa.worldq.uefa": "FIFA World Cup Qualifying",
+            "uefa.nations": "UEFA Nations League",
             "nba": "NBA",
             "nhl": "NHL",
             "atp": "ATP",
@@ -129,8 +133,19 @@ class DataService:
             return payload
 
         labeled = dict(payload)
+        international_codes = {
+            "fifa.world",
+            "fifa.friendly",
+            "fifa.worldq.uefa",
+            "uefa.nations",
+        }
         labeled["events"] = [
-            {**event, "_source_league": event.get("_source_league") or source_league}
+            {
+                **event,
+                "_source_league": event.get("_source_league") or source_league,
+                "_source_competition_type": event.get("_source_competition_type")
+                or ("international" if league_code in international_codes else "league"),
+            }
             if isinstance(event, dict) else event
             for event in events
         ]
@@ -143,6 +158,10 @@ class DataService:
             "https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.friendly/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.worldq.uefa/scoreboard",
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.nations/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
             "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard",
@@ -252,6 +271,7 @@ class DataService:
             "status": status,
             "status_detail": status_detail,
             "is_live": is_live,
+            "competition_type": self._pick_first(item, ["_source_competition_type", "competition_type"]),
         }
 
     def _extract_scores(self, item: Dict[str, Any]) -> tuple[Any, Any]:

@@ -99,6 +99,8 @@ class DataServiceScheduleTests(unittest.TestCase):
         self.assertTrue(any("basketball" in endpoint or "nba" in endpoint for endpoint in endpoints))
         self.assertTrue(any("hockey" in endpoint or "nhl" in endpoint for endpoint in endpoints))
         self.assertTrue(any("tennis" in endpoint or "atp" in endpoint for endpoint in endpoints))
+        self.assertTrue(any("fifa.friendly" in endpoint for endpoint in endpoints))
+        self.assertTrue(any("fifa.world" in endpoint for endpoint in endpoints))
 
     def test_configured_feed_keeps_default_live_sources_as_fallbacks(self) -> None:
         configured_url = "https://www.scorebat.com/video-api/v1/"
@@ -150,6 +152,27 @@ class DataServiceScheduleTests(unittest.TestCase):
 
         self.assertEqual(match["league"], "NHL")
         self.assertEqual(match["sport"], "hockey")
+
+    def test_espn_international_source_marks_normalized_fixture(self) -> None:
+        service = DataService()
+        payload = service._label_espn_payload(
+            {
+                "events": [
+                    {
+                        "home_team": "Home Country",
+                        "away_team": "Away Country",
+                        "date": "2026-10-01T18:00:00Z",
+                        "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                    }
+                ]
+            },
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.friendly/scoreboard",
+        )
+
+        match = service._normalize_payload(payload)[0]
+
+        self.assertEqual(match["league"], "International Friendly")
+        self.assertEqual(match["competition_type"], "international")
 
     def test_free_scrapers_include_hockey_feed(self) -> None:
         scrapers = DataService()._get_free_odd_scrapers()
@@ -234,6 +257,53 @@ class DataServiceScheduleTests(unittest.TestCase):
         )
 
         self.assertEqual({pick["league"] for pick in picks}, {"League A", "League B"})
+
+    def test_international_fixtures_fill_dates_without_league_matches(self) -> None:
+        now = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
+        matches = [
+            {
+                "home_team": "League Home",
+                "away_team": "League Away",
+                "league": "League A",
+                "sport": "soccer",
+                "market": "WLD",
+                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "scheduled_at": "2026-10-01T18:00:00+00:00",
+            },
+            {
+                "home_team": "Friendly Home",
+                "away_team": "Friendly Away",
+                "league": "International Friendly",
+                "competition_type": "international",
+                "sport": "soccer",
+                "market": "WLD",
+                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "scheduled_at": "2026-10-01T19:00:00+00:00",
+            },
+            {
+                "home_team": "International Home",
+                "away_team": "International Away",
+                "league": "FIFA World Cup",
+                "competition_type": "international",
+                "sport": "soccer",
+                "market": "WLD",
+                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "scheduled_at": "2026-10-02T18:00:00+00:00",
+            },
+        ]
+
+        picks = build_display_picks(
+            matches,
+            FixtureSelectionEngine(),
+            {"max_odds": 3, "allowed_sports": ["soccer"], "allowed_markets": ["WLD"]},
+            {"allowed_markets": {"soccer": ["WLD"]}},
+            now,
+        )
+
+        self.assertEqual(
+            {pick["league"] for pick in picks},
+            {"League A", "FIFA World Cup"},
+        )
 
     def test_thesportsdb_style_payloads_are_normalized(self) -> None:
         service = DataService()

@@ -6,6 +6,44 @@
   <p>Date: <strong>{{ current_date }}</strong></p>
 </div>
 
+{% if user %}
+<div class="dashboard-summary" aria-label="Previous pick performance">
+  <div><span>WIN RATE</span><strong>{% if success_rate is not none %}{{ '%.1f'|format(success_rate) }}%{% else %}N/A{% endif %}</strong></div>
+  <div><span>SETTLED PICKS</span><strong>{{ settled_count }}</strong></div>
+  <div><span>WON / LOST</span><strong>{{ result_counts.won }} / {{ result_counts.lost }}</strong></div>
+</div>
+
+<div class="card">
+  <h3>Recent Pick Results</h3>
+  {% if recent_results %}
+  <div class="results-scroll">
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Match</th>
+          <th>Your Pick</th>
+          <th>Updated Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pick in recent_results %}
+        {% set status = (pick.status or 'pending')|lower %}
+        <tr>
+          <td>{{ pick.home_team }} vs {{ pick.away_team }}</td>
+          <td>{{ pick.selection }}</td>
+          <td><span class="result-badge result-{{ status }}">{{ status|title }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p>No settled picks yet.</p>
+  {% endif %}
+  <a class="btn" href="/results">View full results history</a>
+</div>
+{% endif %}
+
 <div class="card">
   <h3>{% if prediction_ready %}LSTM{% else %}Dixon-Coles Fallback{% endif %} Final Selections</h3>
 </div>

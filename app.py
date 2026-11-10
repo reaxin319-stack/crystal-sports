@@ -51,6 +51,14 @@ def is_admin_user(user: dict | None) -> bool:
     return bool(user and user.get("is_admin"))
 
 
+def summarize_pick_results(picks):
+    statuses = Counter(str(pick.get("status") or "pending").strip().lower() for pick in picks)
+    result_counts = {status: statuses[status] for status in ("won", "lost", "pending")}
+    settled_count = result_counts["won"] + result_counts["lost"]
+    success_rate = round(result_counts["won"] / settled_count * 100, 1) if settled_count else None
+    return result_counts, settled_count, success_rate
+
+
 def resolve_display_date(scheduled_dt: datetime, now: datetime | None = None):
     if now is None:
         now = datetime.now(timezone.utc)
@@ -78,6 +86,16 @@ def build_display_picks(matches, prediction_engine, subscription, admin_config, 
 
     picks = []
     for daily_matches in matches_by_day.values():
+        league_matches = [
+            match
+            for match in daily_matches
+            if match.get("competition_type") != "international"
+        ]
+        daily_matches = league_matches or [
+            match
+            for match in daily_matches
+            if match.get("competition_type") == "international"
+        ]
         matches_by_league = {}
         for match in daily_matches:
             league = match.get("league")
@@ -209,6 +227,13 @@ if __name__ != "__main__" or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
 def predictions():
     user = current_user()
     matches, picks, subscription, prediction_engine, admin_service, admin_config, now_utc = build_current_user_picks(user)
+    history_picks = models.get_user_picks_for_user(user["id"]) if user else []
+    result_counts, settled_count, success_rate = summarize_pick_results(history_picks)
+    recent_results = [
+        pick
+        for pick in history_picks
+        if str(pick.get("status") or "pending").strip().lower() in {"won", "lost"}
+    ][:5]
     if is_admin_user(user):
         if subscription.get("name", "").lower() == "vip":
             combo_slips = prediction_engine.build_magic_combinations(matches, subscription, admin_config)
@@ -222,6 +247,7 @@ def predictions():
 
     return render_template(
         "predictions.html",
+        user=user,
         current_date=today.strftime("%A, %B %d"),
         today_picks=today_picks,
         tomorrow_picks=tomorrow_picks,
@@ -235,6 +261,10 @@ def predictions():
         admin_config=admin_config,
         is_admin=is_admin_user(user),
         no_live_matches=not (today_picks or tomorrow_picks or later_picks),
+        result_counts=result_counts,
+        settled_count=settled_count,
+        success_rate=success_rate,
+        recent_results=recent_results,
     )
 
 
@@ -486,10 +516,7 @@ def results():
         return redirect(url_for("login", next=url_for("results")))
 
     picks = models.get_user_picks_for_user(user["id"])
-    statuses = Counter(str(pick.get("status") or "pending").strip().lower() for pick in picks)
-    result_counts = {status: statuses[status] for status in ("won", "lost", "pending")}
-    settled_count = result_counts["won"] + result_counts["lost"]
-    success_rate = round(result_counts["won"] / settled_count * 100, 1) if settled_count else None
+    result_counts, settled_count, success_rate = summarize_pick_results(picks)
     return render_template(
         "results.html",
         user=user,
