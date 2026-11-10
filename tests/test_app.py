@@ -52,6 +52,39 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Predictions", response.data)
 
+    def test_vip_predictions_page_renders_magic_combination_items(self) -> None:
+        admin = {"id": 99, "username": "admin", "is_admin": 1, "plan": "vip"}
+        match = {
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "market": "WLD",
+        }
+        combo = {
+            "title": "VIP Combo 1",
+            "items": [match],
+            "combined_odds": 3.4,
+        }
+
+        class TestPredictionEngine:
+            is_trained = True
+            training_record_count = 40
+            MIN_TRAINING_RECORDS = 40
+
+            def build_magic_combinations(self, _matches, _subscription, _admin_config):
+                return [combo]
+
+        subscription = {"name": "VIP", "duration": "1 month", "max_odds": 20}
+        now = datetime.now(timezone.utc)
+        with patch("app.current_user", return_value=admin), patch(
+            "app.build_current_user_picks",
+            return_value=([], [], subscription, TestPredictionEngine(), None, {}, now),
+        ), patch("app.models.get_user_picks_for_user", return_value=[]):
+            response = self.client.get("/predictions")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"VIP Magic Combination Slips", response.data)
+        self.assertIn(b"Home FC vs Away FC", response.data)
+
     def test_predictions_page_shows_recent_results_and_win_rate(self) -> None:
         user = {"id": 77, "username": "demo"}
         history_picks = [
