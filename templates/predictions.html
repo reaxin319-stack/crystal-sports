@@ -61,7 +61,7 @@
     <p><strong>{{ pick.league }}</strong> · {{ pick.market }} · {{ pick.sport }}</p>
     <p>Time: {{ pick.scheduled_at or 'TBD' }}</p>
     <p>Selection: <strong>{{ pick.selection }}</strong></p>
-    <p>Odds: {{ pick.odds }}</p>
+    <p>{% if pick.odds_estimated %}Estimated fair odds{% else %}Odds{% endif %}: {{ pick.odds }}</p>
     <p>{{ pick.reason }}</p>
   </div>
   {% endfor %}
@@ -88,7 +88,7 @@
     <p><strong>{{ pick.league }}</strong> · {{ pick.market }} · {{ pick.sport }}</p>
     <p>Time: {{ pick.scheduled_at or 'TBD' }}</p>
     <p>Selection: <strong>{{ pick.selection }}</strong></p>
-    <p>Odds: {{ pick.odds }}</p>
+    <p>{% if pick.odds_estimated %}Estimated fair odds{% else %}Odds{% endif %}: {{ pick.odds }}</p>
     <p>{{ pick.reason }}</p>
   </div>
   {% endfor %}
@@ -108,7 +108,7 @@
     <p><strong>{{ pick.league }}</strong> · {{ pick.market }} · {{ pick.sport }}</p>
     <p>Time: {{ pick.scheduled_at or 'TBD' }}</p>
     <p>Selection: <strong>{{ pick.selection }}</strong></p>
-    <p>Odds: {{ pick.odds }}</p>
+    <p>{% if pick.odds_estimated %}Estimated fair odds{% else %}Odds{% endif %}: {{ pick.odds }}</p>
     <p>{{ pick.reason }}</p>
   </div>
   {% endfor %}

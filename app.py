@@ -74,8 +74,38 @@ def resolve_display_date(scheduled_dt: datetime, now: datetime | None = None):
 
 def build_display_picks(matches, prediction_engine, subscription, admin_config, now=None):
     now = now or datetime.now(timezone.utc)
-    matches_by_day = {}
+    expanded_matches = []
     for match in matches:
+        provided_market_odds = match.get("market_odds")
+        if not isinstance(provided_market_odds, dict) or not provided_market_odds:
+            provided_market_odds = {match.get("market", "WLD"): match.get("odds", {})}
+        market_odds = dict(provided_market_odds)
+        estimated_markets = set()
+        if match.get("odds_estimated"):
+            estimated_markets.add(match.get("market", "WLD"))
+        if match.get("sport") == "soccer" and isinstance(market_odds.get("WLD"), dict):
+            derived_markets = prediction_engine.derive_market_odds(
+                {**match, "odds": market_odds["WLD"]}
+            )
+            allowed_markets = set(subscription.get("allowed_markets", []))
+            admin_markets = set(admin_config.get("allowed_markets", {}).get("soccer", []))
+            for market, odds in derived_markets.items():
+                if market not in market_odds and market in allowed_markets and market in admin_markets:
+                    market_odds[market] = odds
+                    estimated_markets.add(market)
+        for market, odds in market_odds.items():
+            if isinstance(odds, dict):
+                expanded_matches.append(
+                    {
+                        **match,
+                        "market": market,
+                        "odds": odds,
+                        "odds_estimated": market in estimated_markets,
+                    }
+                )
+
+    matches_by_day = {}
+    for match in expanded_matches:
         scheduled_at = match.get("scheduled_at")
         try:
             scheduled_dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
@@ -101,8 +131,11 @@ def build_display_picks(matches, prediction_engine, subscription, admin_config, 
             league = match.get("league")
             if not league or str(league).strip().casefold() in {"live league", "unknown"}:
                 league = match.get("sport", "unknown")
-            league_key = str(league).strip().casefold()
-            matches_by_league.setdefault(league_key, []).append(match)
+            group_key = (
+                str(league).strip().casefold(),
+                str(match.get("market") or "WLD").strip().casefold(),
+            )
+            matches_by_league.setdefault(group_key, []).append(match)
 
         league_picks = [
             prediction_engine.build_slips(league_matches, subscription, admin_config)

@@ -140,6 +140,69 @@ def _fit_total_rate(odds: Dict[str, Any]) -> float | None:
 class DixonColesFallback:
     """Market-calibrated Dixon-Coles soccer fallback for an untrained sequence model."""
 
+    def derive_market_odds(self, match: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+        if str(match.get("sport", "")).casefold() != "soccer":
+            return {}
+        target = _fair_probabilities(match.get("odds", {}), ["home", "draw", "away"])
+        if not target:
+            return {}
+
+        home_rate, away_rate = _fit_rates(target)
+        matrix = _score_matrix(home_rate, away_rate)
+        outcomes = _outcome_probabilities(matrix)
+
+        def fair_price(probability: float) -> float | None:
+            return round(1 / probability, 2) if 0 < probability < 1 else None
+
+        derived: Dict[str, Dict[str, float]] = {}
+        double_chance = {
+            "1x": fair_price(outcomes["home"] + outcomes["draw"]),
+            "12": fair_price(outcomes["home"] + outcomes["away"]),
+            "x2": fair_price(outcomes["draw"] + outcomes["away"]),
+        }
+        if all(price is not None for price in double_chance.values()):
+            derived["Double Chance"] = double_chance
+
+        totals = {}
+        for line in (1.5, 2.5):
+            over_probability = sum(
+                matrix[home_goals][away_goals]
+                for home_goals in range(len(matrix))
+                for away_goals in range(len(matrix[home_goals]))
+                if home_goals + away_goals > line
+            )
+            totals[f"over_{str(line).replace('.', '_')}"] = fair_price(over_probability)
+            totals[f"under_{str(line).replace('.', '_')}"] = fair_price(1 - over_probability)
+        if all(price is not None for price in totals.values()):
+            derived["Over/Under"] = totals
+
+        btts_probability = sum(
+            matrix[home_goals][away_goals]
+            for home_goals in range(1, len(matrix))
+            for away_goals in range(1, len(matrix[home_goals]))
+        )
+        btts = {
+            "yes": fair_price(btts_probability),
+            "no": fair_price(1 - btts_probability),
+        }
+        if all(price is not None for price in btts.values()):
+            derived["BTTS"] = btts
+
+        home_cover = sum(
+            matrix[home_goals][away_goals]
+            for home_goals in range(len(matrix))
+            for away_goals in range(len(matrix[home_goals]))
+            if home_goals - away_goals > 1
+        )
+        handicap = {
+            "home_handicap": fair_price(home_cover),
+            "away_handicap": fair_price(1 - home_cover),
+            "line": -1.5,
+        }
+        if handicap["home_handicap"] is not None and handicap["away_handicap"] is not None:
+            derived["Handicap"] = handicap
+        return derived
+
     def build_slips(
         self,
         matches: List[Dict[str, Any]],
@@ -217,8 +280,13 @@ class DixonColesFallback:
             "selection": selection,
             "odds": selected_odds,
             "scheduled_at": match.get("scheduled_at"),
+            "odds_estimated": bool(match.get("odds_estimated")),
             "reason": (
-                "Dixon-Coles soccer fallback calibrated from market odds; "
+                "Model-estimated fair odds from Dixon-Coles score probabilities; "
+                if match.get("odds_estimated")
+                else "Dixon-Coles soccer fallback calibrated from market odds; "
+            )
+            + (
                 f"estimated goals {home_rate:.2f}-{away_rate:.2f}, "
                 f"outcome probability {confidence:.0%}. LSTM training: "
                 f"{training_record_count}/{min_training_records} resolved picks."

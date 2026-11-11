@@ -122,6 +122,33 @@ class LSTMPredictionEngineTests(unittest.TestCase):
         self.assertEqual(len(picks), 1)
         self.assertEqual(picks[0]["selection"], "Over Cards")
 
+    def test_market_implied_fallback_supports_double_chance_btts_and_handicap(self) -> None:
+        market_cases = [
+            (
+                "Double Chance",
+                {"1x": 1.4, "12": 1.3, "x2": 1.6},
+                "12",
+            ),
+            ("BTTS", {"yes": 1.8, "no": 2.0}, "Yes"),
+            (
+                "Handicap",
+                {"home_handicap": 1.8, "away_handicap": 2.0, "line": -0.5},
+                "Home -0.5",
+            ),
+        ]
+
+        for market, odds, expected_selection in market_cases:
+            with self.subTest(market=market):
+                match = {**self.match, "market": market, "odds": odds}
+                subscription = {**self.subscription, "allowed_markets": [market]}
+                admin_config = {"allowed_markets": {"soccer": [market]}}
+                engine = LSTMPredictionEngine(history_provider=lambda: [])
+
+                picks = engine.build_slips([match], subscription, admin_config)
+
+                self.assertEqual(len(picks), 1)
+                self.assertEqual(picks[0]["selection"], expected_selection)
+
     def test_lstm_selects_learned_outcome_from_ordered_history(self) -> None:
         engine = LSTMPredictionEngine(history_provider=self._resolved_history)
 

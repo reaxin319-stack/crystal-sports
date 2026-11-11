@@ -29,8 +29,20 @@ def _available_market_outcomes(market: str, odds: Dict[str, Any]):
         ]
         return available_totals or [("over", "Over"), ("under", "Under")]
 
+    if market == "Handicap":
+        try:
+            line = float(odds["line"])
+        except (KeyError, TypeError, ValueError):
+            return []
+        return [
+            ("home_handicap", f"Home {line:+g}"),
+            ("away_handicap", f"Away {-line:+g}"),
+        ]
+
     return {
         "WLD": [("home", "home"), ("draw", "draw"), ("away", "away")],
+        "Double Chance": [("1x", "1X"), ("12", "12"), ("x2", "X2")],
+        "BTTS": [("yes", "Yes"), ("no", "No")],
         "Cards": [("cards_over", "Over Cards"), ("cards_under", "Under Cards")],
         "Who Wins Set": [("player_a", "Player A"), ("player_b", "Player B")],
     }.get(market, [])
@@ -179,6 +191,9 @@ class LSTMPredictionEngine:
                     "LSTM sequence model selected the highest predicted win probability "
                     f"({probabilities[selected_index]:.0%})."
                 )
+                pick["odds_estimated"] = bool(match.get("odds_estimated"))
+                if pick["odds_estimated"]:
+                    pick["reason"] += " The displayed price is a model-estimated fair price."
                 picks.append(pick)
                 if len(picks) >= max_picks:
                     break
@@ -199,6 +214,9 @@ class LSTMPredictionEngine:
                 )
             )
         return picks[:max_picks]
+
+    def derive_market_odds(self, match: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+        return self._dixon_coles.derive_market_odds(match)
 
     def build_magic_combinations(
         self,
@@ -265,9 +283,15 @@ class LSTMPredictionEngine:
                     "selection": selection,
                     "odds": selected_odds,
                     "scheduled_at": match.get("scheduled_at"),
+                    "odds_estimated": bool(match.get("odds_estimated")),
                     "reason": (
-                        "Market-implied fallback selected the highest normalized "
-                        f"outcome probability ({probability:.0%}) from available odds."
+                        (
+                            "Model-estimated fair odds selected the highest normalized "
+                            f"outcome probability ({probability:.0%})."
+                            if match.get("odds_estimated")
+                            else "Market-implied fallback selected the highest normalized "
+                            f"outcome probability ({probability:.0%}) from available odds."
+                        )
                     ),
                 }
             )
@@ -276,12 +300,13 @@ class LSTMPredictionEngine:
         return picks
 
     @staticmethod
-    def _fixture_identity(match: Dict[str, Any]) -> tuple[str, str, str, str]:
+    def _fixture_identity(match: Dict[str, Any]) -> tuple[str, str, str, str, str]:
         return (
             str(match.get("sport") or "soccer").strip().casefold(),
             str(match.get("home_team") or "").strip().casefold(),
             str(match.get("away_team") or "").strip().casefold(),
             str(match.get("scheduled_at") or "").strip(),
+            str(match.get("market") or "WLD").strip().casefold(),
         )
 
     def _candidate_sequence(self, features: List[float]) -> List[List[float]]:

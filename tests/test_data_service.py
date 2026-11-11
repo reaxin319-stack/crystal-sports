@@ -67,6 +67,75 @@ class DataServiceScheduleTests(unittest.TestCase):
         self.assertEqual(match["market"], "Who Wins Set")
         self.assertEqual(match["odds"], {"player_a": 1.8, "player_b": 2.05})
 
+    def test_normalization_preserves_all_available_soccer_markets(self) -> None:
+        match = DataService()._build_match_from_payload(
+            {
+                "home_team": "Home FC",
+                "away_team": "Away FC",
+                "league": "Premier League",
+                "sport": "soccer",
+                "odds": {
+                    "home": 2.1,
+                    "draw": 3.2,
+                    "away": 3.6,
+                    "over_2_5": 1.8,
+                    "under_2_5": 2.0,
+                    "double_chance_1x": 1.4,
+                    "double_chance_12": 1.3,
+                    "double_chance_x2": 1.6,
+                    "btts_yes": 1.9,
+                    "btts_no": 1.9,
+                    "handicap_home": 1.9,
+                    "handicap_away": 1.9,
+                    "handicap_line": -0.5,
+                },
+            }
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(
+            set(match["market_odds"]),
+            {"WLD", "Over/Under", "Double Chance", "BTTS", "Handicap"},
+        )
+        self.assertEqual(match["market_odds"]["Handicap"]["line"], -0.5)
+
+    def test_display_pick_limit_is_balanced_across_available_markets(self) -> None:
+        class MarketSelectionEngine:
+            def build_slips(self, matches, _subscription, _admin_config):
+                return [
+                    {**match, "selection": match["market"], "odds": 2.0}
+                    for match in matches
+                ]
+
+        match = {
+            "home_team": "Home FC",
+            "away_team": "Away FC",
+            "league": "Premier League",
+            "sport": "soccer",
+            "scheduled_at": "2026-10-01T18:00:00+00:00",
+            "market_odds": {
+                "WLD": {"home": 2.1, "draw": 3.2, "away": 3.6},
+                "Over/Under": {"over_2_5": 1.8, "under_2_5": 2.0},
+                "Double Chance": {"1x": 1.4, "12": 1.3, "x2": 1.6},
+                "BTTS": {"yes": 1.9, "no": 1.9},
+                "Handicap": {"home_handicap": 1.9, "away_handicap": 1.9, "line": -0.5},
+            },
+        }
+
+        picks = build_display_picks(
+            [match],
+            MarketSelectionEngine(),
+            {"max_odds": 4},
+            {},
+            datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(len(picks), 4)
+        self.assertEqual(
+            {pick["market"] for pick in picks},
+            {"WLD", "Over/Under", "Double Chance", "BTTS"},
+        )
+
     def test_matches_include_future_schedule_at_least_three_hours_ahead(self) -> None:
         service = DataService()
         matches = service.get_live_matches()

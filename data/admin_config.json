@@ -8,11 +8,15 @@
     "soccer": [
       "WLD",
       "Over/Under",
+      "Double Chance",
+      "BTTS",
+      "Handicap",
       "Cards"
     ],
     "hockey": [
       "WLD",
-      "Over/Under"
+      "Over/Under",
+      "Handicap"
     ],
     "tennis": [
       "WLD",
@@ -33,6 +37,9 @@
       "allowed_markets": [
         "WLD",
         "Over/Under",
+        "Double Chance",
+        "BTTS",
+        "Handicap",
         "Who Wins Set"
       ],
       "description": "View live soccer, hockey, and tennis picks for one month.",
@@ -49,7 +56,10 @@
       ],
       "allowed_markets": [
         "WLD",
-        "Over/Under"
+        "Over/Under",
+        "Double Chance",
+        "BTTS",
+        "Handicap"
       ],
       "description": "Unlock soccer and hockey picks with 5-odds slips.",
       "stripe_price_id": ""
@@ -67,6 +77,9 @@
       "allowed_markets": [
         "WLD",
         "Over/Under",
+        "Double Chance",
+        "BTTS",
+        "Handicap",
         "Who Wins Set"
       ],
       "description": "Access all three sports and 10-odds slips.",
@@ -85,6 +98,9 @@
       "allowed_markets": [
         "WLD",
         "Over/Under",
+        "Double Chance",
+        "BTTS",
+        "Handicap",
         "Cards",
         "Who Wins Set"
       ],

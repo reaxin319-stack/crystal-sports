@@ -236,6 +236,8 @@ class DataService:
         sport = self._guess_sport(league, home, away, sport_hint)
         market = self._guess_market(item)
         odds = self._extract_odds(item)
+        market_odds = self._extract_market_odds(item)
+        odds_estimated = False
 
         if isinstance(home, dict):
             home = self._pick_first(home, ["name", "home_team", "team_name", "title"])
@@ -251,11 +253,14 @@ class DataService:
 
         if not odds:
             odds = self._build_fallback_odds(home, away, item)
+            odds_estimated = bool(odds)
 
         if not odds:
             return None
         if market == "WLD" and {"player_a", "player_b"}.issubset(odds):
             market = "Who Wins Set"
+        if market not in market_odds and odds:
+            market_odds[market] = odds
 
         home_score, away_score = self._extract_scores(item)
         status, status_detail, is_live = self._extract_status(item)
@@ -267,6 +272,8 @@ class DataService:
             "sport": sport,
             "market": market,
             "odds": odds,
+            "market_odds": market_odds,
+            "odds_estimated": odds_estimated,
             "scheduled_at": self._extract_scheduled_at(item) or self._build_future_schedule(),
             "home_score": home_score,
             "away_score": away_score,
@@ -352,6 +359,12 @@ class DataService:
                 candidate_keys.extend(str(key).lower() for key in container.keys())
 
         normalized_keys = [re.sub(r"[^a-z0-9]", "", key) for key in candidate_keys]
+        if any("doublechance" in key or key in {"1x", "12", "x2", "homedraw", "homeaway", "drawaway"} for key in normalized_keys):
+            return "Double Chance"
+        if any("btts" in key or "bothteamstoscore" in key for key in normalized_keys):
+            return "BTTS"
+        if any("handicap" in key or "spread" in key for key in normalized_keys):
+            return "Handicap"
         if any(
             key.startswith(("over", "under", "totalover", "totalunder", "goalsover", "goalsunder"))
             and ("15" in key or "25" in key)
@@ -388,6 +401,106 @@ class DataService:
             return "Who Wins Set"
 
         return "WLD"
+
+    def _extract_market_odds(self, item: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        source = item.get("odds") if isinstance(item.get("odds"), dict) else item
+        markets: Dict[str, Dict[str, Any]] = {}
+
+        def find(keys: List[str], nested: Dict[str, Any] | None = None):
+            return self._pick_first(source, keys) or self._pick_first(item, keys) or self._pick_first(nested, keys)
+
+        def price(value: Any) -> float | None:
+            if isinstance(value, dict) or isinstance(value, str) and value.strip().startswith(("+", "-")):
+                return self._american_to_decimal(value)
+            return self._coerce_float(value)
+
+        moneyline = self._extract_espn_odds(item)
+        if not moneyline:
+            values = {
+                key: price(find(aliases))
+                for key, aliases in {
+                    "home": ["home", "home_odds", "home_price", "odds_home", "odd_home", "win_home", "homeOdds", "homeOdd"],
+                    "draw": ["draw", "draw_odds", "draw_price", "odds_draw", "odd_draw", "drawOdds", "drawOdd"],
+                    "away": ["away", "away_odds", "away_price", "odds_away", "odd_away", "win_away", "awayOdds", "awayOdd"],
+                }.items()
+            }
+            if all(value is not None and value > 1 for value in values.values()):
+                moneyline = values
+        if moneyline:
+            markets["WLD"] = moneyline
+
+        total_aliases = {
+            "over_1_5": ["over_1_5", "over_1.5", "over15", "over_15", "over_1_5_odds", "over15_odds", "over15Odds", "goals_over_1_5", "total_over_1_5"],
+            "under_1_5": ["under_1_5", "under_1.5", "under15", "under_15", "under_1_5_odds", "under15_odds", "under15Odds", "goals_under_1_5", "total_under_1_5"],
+            "over_2_5": ["over_2_5", "over_2.5", "over25", "over_25", "over_2_5_odds", "over25_odds", "over25Odds", "goals_over_2_5", "total_over_2_5"],
+            "under_2_5": ["under_2_5", "under_2.5", "under25", "under_25", "under_2_5_odds", "under25_odds", "under25Odds", "goals_under_2_5", "total_under_2_5"],
+        }
+        totals = {key: value for key, aliases in total_aliases.items() if (value := price(find(aliases))) is not None and value > 1}
+        if totals:
+            markets["Over/Under"] = totals
+
+        double_chance = {}
+        for key, aliases in {
+            "1x": ["double_chance_1x", "doubleChance1X", "home_draw", "home_or_draw", "1x"],
+            "12": ["double_chance_12", "doubleChance12", "home_away", "home_or_away", "12"],
+            "x2": ["double_chance_x2", "doubleChanceX2", "draw_away", "draw_or_away", "x2"],
+        }.items():
+            value = price(find(aliases))
+            if value is not None and value > 1:
+                double_chance[key] = value
+        if double_chance:
+            markets["Double Chance"] = double_chance
+
+        btts_source = source.get("btts") if isinstance(source.get("btts"), dict) else None
+        btts = {}
+        for key, aliases in {
+            "yes": ["btts_yes", "both_teams_to_score_yes", "bttsYes", "yes"],
+            "no": ["btts_no", "both_teams_to_score_no", "bttsNo", "no"],
+        }.items():
+            value = price(find(aliases, btts_source))
+            if value is not None and value > 1:
+                btts[key] = value
+        if btts:
+            markets["BTTS"] = btts
+
+        handicap_source = source.get("handicap") if isinstance(source.get("handicap"), dict) else None
+        handicap = {}
+        for key, aliases in {
+            "home_handicap": ["home_handicap_odds", "handicap_home_odds", "home_spread_odds", "home_handicap", "handicap_home"],
+            "away_handicap": ["away_handicap_odds", "handicap_away_odds", "away_spread_odds", "away_handicap", "handicap_away"],
+        }.items():
+            value = price(find(aliases, handicap_source))
+            if value is not None and value > 1:
+                handicap[key] = value
+        line_value = find(["handicap_line", "spread_line", "spread", "line"], handicap_source)
+        line = self._coerce_float(line_value)
+        if len(handicap) == 2 and line is not None:
+            handicap["line"] = line
+            markets["Handicap"] = handicap
+
+        cards = {}
+        for key, aliases in {
+            "cards_over": ["cards_over", "cardsOver", "cards_over_odds"],
+            "cards_under": ["cards_under", "cardsUnder", "cards_under_odds"],
+        }.items():
+            value = price(find(aliases))
+            if value is not None and value > 1:
+                cards[key] = value
+        if cards:
+            markets["Cards"] = cards
+
+        player_winner = {}
+        for key, aliases in {
+            "player_a": ["player_a", "playerA", "player_a_odds"],
+            "player_b": ["player_b", "playerB", "player_b_odds"],
+        }.items():
+            value = price(find(aliases))
+            if value is not None and value > 1:
+                player_winner[key] = value
+        if player_winner:
+            markets["Who Wins Set"] = player_winner
+
+        return markets
 
     def _extract_espn_teams(self, item: Dict[str, Any]) -> tuple[str | None, str | None, str | None]:
         competitions = item.get("competitions") if isinstance(item, dict) else None

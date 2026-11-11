@@ -22,4 +22,4 @@ SPORTS = {
     "tennis": {"name": "Tennis", "leagues": ["ATP", "WTA"]},
 }
 
-ALL_MARKETS = ["WLD", "Over/Under", "Cards", "Who Wins Set"]
+ALL_MARKETS = ["WLD", "Over/Under", "Double Chance", "BTTS", "Handicap", "Cards", "Who Wins Set"]
