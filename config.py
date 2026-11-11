@@ -1,3 +1,6 @@
+MIN_SELECTION_ODDS = 1.2
+MIN_COMBINED_ODDS = 2.5
+
 LEAGUES = [
     {
         "name": "Premier League",

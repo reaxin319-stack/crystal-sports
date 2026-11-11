@@ -131,7 +131,7 @@
     <p>Combined odds estimate: {{ combo.combined_odds }}</p>
     <ul>
       {% for item in combo["items"] %}
-      <li>{{ item.home_team }} vs {{ item.away_team }} · {{ item.market }}</li>
+      <li>{{ item.home_team }} vs {{ item.away_team }} · {{ item.market }} · {{ item.selection }} @ {{ item.odds }}</li>
       {% endfor %}
     </ul>
   </div>

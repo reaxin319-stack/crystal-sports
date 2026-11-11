@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List
 import torch
 from torch import nn
 
+from config import MIN_COMBINED_ODDS, MIN_SELECTION_ODDS
 from services.dixon_coles import DixonColesFallback
 
 
@@ -53,7 +54,7 @@ def _valid_price(value: Any) -> bool:
         price = float(value)
     except (TypeError, ValueError):
         return False
-    return math.isfinite(price) and price > 1.0
+    return math.isfinite(price) and price >= MIN_SELECTION_ODDS
 
 
 class _OutcomeLSTM(nn.Module):
@@ -227,18 +228,21 @@ class LSTMPredictionEngine:
         if subscription.get("name", "").lower() != "vip":
             return []
 
-        allowed = [match for match in matches if self._is_allowed(match, subscription, admin_config)]
-        if len(allowed) < 3:
+        picks = self._build_market_implied_slips(matches, subscription, admin_config, len(matches))
+        if len(picks) < 3:
             return []
 
         combos = []
-        for start in range(min(4, len(allowed))):
-            items = allowed[start : start + 4]
+        for start in range(min(4, len(picks))):
+            items = picks[start : start + 4]
             if len(items) >= 3:
+                combined_odds = math.prod(item["odds"] for item in items)
+                if not math.isfinite(combined_odds) or combined_odds < MIN_COMBINED_ODDS:
+                    continue
                 combos.append({
                     "title": f"VIP Combo {len(combos) + 1}",
                     "items": items,
-                    "combined_odds": round(sum(item.get("odds", {}).get("home", 1.0) for item in items), 2),
+                    "combined_odds": round(combined_odds, 2),
                 })
         return combos[:3]
 
@@ -340,7 +344,7 @@ class LSTMPredictionEngine:
             odds = float(record.get("odds"))
         except (TypeError, ValueError):
             return None
-        if not math.isfinite(odds) or odds <= 1.0:
+        if not math.isfinite(odds) or odds < MIN_SELECTION_ODDS:
             return None
 
         features = [0.0] * FEATURE_SIZE

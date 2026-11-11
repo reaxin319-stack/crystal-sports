@@ -1,6 +1,8 @@
 import math
 from typing import Any, Dict, List
 
+from config import MIN_SELECTION_ODDS
+
 
 RHO = -0.08
 MAX_GOALS = 10
@@ -17,7 +19,7 @@ def _price(value: Any) -> float | None:
         result = float(value)
     except (TypeError, ValueError):
         return None
-    return result if math.isfinite(result) and result > 1 else None
+    return result if math.isfinite(result) and result >= MIN_SELECTION_ODDS else None
 
 
 def _fair_probabilities(prices: Dict[str, Any], outcomes: List[str]) -> Dict[str, float] | None:

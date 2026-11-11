@@ -86,6 +86,19 @@ class LSTMPredictionEngineTests(unittest.TestCase):
         self.assertIn(picks[0]["selection"], {"home", "draw", "away"})
         self.assertIn("Market-implied fallback", picks[0]["reason"])
 
+    def test_selection_odds_below_1_2_are_rejected_but_1_2_is_allowed(self) -> None:
+        match = {
+            **self.match,
+            "odds": {"home": 1.19, "draw": 1.2, "away": 3.0},
+        }
+        engine = LSTMPredictionEngine(history_provider=lambda: [])
+
+        candidates = engine._build_candidates(match)
+        picks = engine.build_slips([match], self.subscription, self.admin_config)
+
+        self.assertEqual({pick["odds"] for pick, _ in candidates}, {1.2, 3.0})
+        self.assertEqual(picks[0]["odds"], 1.2)
+
     def test_market_implied_fallback_supports_tennis_winner_market(self) -> None:
         match = {
             **self.match,
@@ -121,6 +134,41 @@ class LSTMPredictionEngineTests(unittest.TestCase):
 
         self.assertEqual(len(picks), 1)
         self.assertEqual(picks[0]["selection"], "Over Cards")
+
+    def test_vip_combinations_use_valid_prices_and_minimum_combined_odds(self) -> None:
+        matches = [
+            {
+                **self.match,
+                "home_team": f"Home {index}",
+                "away_team": f"Away {index}",
+                "odds": {"home": 1.19, "draw": 1.3, "away": 3.0},
+            }
+            for index in range(4)
+        ]
+        subscription = {
+            **self.subscription,
+            "name": "VIP",
+            "allowed_sports": ["soccer"],
+            "allowed_markets": ["WLD"],
+        }
+        admin_config = {"allowed_markets": {"soccer": ["WLD"]}}
+        engine = LSTMPredictionEngine(history_provider=lambda: [])
+
+        combos = engine.build_magic_combinations(matches, subscription, admin_config)
+
+        self.assertTrue(combos)
+        self.assertEqual(combos[0]["combined_odds"], 2.86)
+        self.assertTrue(all(item["odds"] >= 1.2 for item in combos[0]["items"]))
+        self.assertTrue(all(item["selection"] == "draw" for item in combos[0]["items"]))
+
+        low_price_matches = [
+            {**match, "odds": {"home": 1.2, "draw": 3.0, "away": 4.0}}
+            for match in matches
+        ]
+        self.assertEqual(
+            engine.build_magic_combinations(low_price_matches, subscription, admin_config),
+            [],
+        )
 
     def test_market_implied_fallback_supports_double_chance_btts_and_handicap(self) -> None:
         market_cases = [

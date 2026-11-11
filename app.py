@@ -1,5 +1,6 @@
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+import math
 import os
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ if str(UTILS_DIR) not in sys.path:
 
 from flask import Flask, redirect, render_template, request, session, url_for
 
+from config import MIN_COMBINED_ODDS, MIN_SELECTION_ODDS
 from services.admin_service import AdminConfigService
 from services.data_service import DataService
 from services.daily_picks import DailyPickService, create_daily_pick_scheduler
@@ -137,10 +139,16 @@ def build_display_picks(matches, prediction_engine, subscription, admin_config, 
             )
             matches_by_league.setdefault(group_key, []).append(match)
 
-        league_picks = [
-            prediction_engine.build_slips(league_matches, subscription, admin_config)
-            for league_matches in matches_by_league.values()
-        ]
+        league_picks = []
+        for league_matches in matches_by_league.values():
+            market_picks = prediction_engine.build_slips(league_matches, subscription, admin_config)
+            league_picks.append(
+                [
+                    pick
+                    for pick in market_picks
+                    if _is_valid_pick_odds(pick.get("odds"))
+                ]
+            )
         daily_limit = int(subscription.get("max_odds", 3) or 0)
         daily_picks = []
         round_index = 0
@@ -151,8 +159,18 @@ def build_display_picks(matches, prediction_engine, subscription, admin_config, 
                     if len(daily_picks) >= daily_limit:
                         break
             round_index += 1
-        picks.extend(daily_picks)
+        combined_odds = math.prod(float(pick["odds"]) for pick in daily_picks)
+        if daily_picks and math.isfinite(combined_odds) and combined_odds >= MIN_COMBINED_ODDS:
+            picks.extend(daily_picks)
     return picks
+
+
+def _is_valid_pick_odds(value):
+    try:
+        odds = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(odds) and odds >= MIN_SELECTION_ODDS
 
 
 def split_display_picks(picks, now):

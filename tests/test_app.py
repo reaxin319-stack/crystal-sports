@@ -131,7 +131,7 @@ class AppRouteTests(unittest.TestCase):
             "league": "Premier League",
             "sport": "soccer",
             "market": "WLD",
-            "odds": {"home": 1.8, "draw": 3.2, "away": 4.0},
+            "odds": {"home": 2.8, "draw": 3.2, "away": 3.5},
             "scheduled_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
         }
 
@@ -321,13 +321,13 @@ class AppRouteTests(unittest.TestCase):
             "league": "Premier League",
             "sport": "soccer",
             "market": "WLD",
-            "odds": {"home": 2.0, "draw": 3.5, "away": 4.0},
+            "odds": {"home": 2.8, "draw": 3.5, "away": 3.2},
             "scheduled_at": match_time,
         }
         saved_pick = {
             **match,
             "selection": "home",
-            "odds": 2.0,
+            "odds": 2.8,
             "status": "pending",
         }
 
@@ -495,7 +495,7 @@ class AppRouteTests(unittest.TestCase):
             "league": "Premier League",
             "sport": "soccer",
             "market": "WLD",
-            "odds": {"home": 2.1, "draw": 3.5, "away": 2.8},
+            "odds": {"home": 2.8, "draw": 3.5, "away": 3.2},
             "scheduled_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
         }
 

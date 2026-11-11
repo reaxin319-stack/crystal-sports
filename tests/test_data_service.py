@@ -7,6 +7,9 @@ from services.data_service import DataService
 
 
 class FixtureSelectionEngine:
+    def derive_market_odds(self, _match):
+        return {}
+
     def build_slips(self, matches, subscription, _admin_config):
         return [
             {
@@ -101,6 +104,9 @@ class DataServiceScheduleTests(unittest.TestCase):
 
     def test_display_pick_limit_is_balanced_across_available_markets(self) -> None:
         class MarketSelectionEngine:
+            def derive_market_odds(self, _match):
+                return {}
+
             def build_slips(self, matches, _subscription, _admin_config):
                 return [
                     {**match, "selection": match["market"], "odds": 2.0}
@@ -135,6 +141,79 @@ class DataServiceScheduleTests(unittest.TestCase):
             {pick["market"] for pick in picks},
             {"WLD", "Over/Under", "Double Chance", "BTTS"},
         )
+
+    def test_combined_odds_minimum_applies_to_every_plan(self) -> None:
+        now = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
+        matches = [
+            {
+                "home_team": f"Home {index}",
+                "away_team": f"Away {index}",
+                "league": "League A",
+                "sport": "soccer",
+                "market": "WLD",
+                "odds": {"home": price},
+                "scheduled_at": "2026-10-01T18:00:00+00:00",
+            }
+            for index, price in enumerate((1.19, 1.3, 2.0))
+        ]
+        engine = FixtureSelectionEngine()
+        admin_config = {"allowed_markets": {"soccer": ["WLD"]}}
+        below_minimum = [
+            {
+                **matches[1],
+                "home_team": f"Low Home {index}",
+                "away_team": f"Low Away {index}",
+                "odds": {"home": 1.3},
+            }
+            for index in range(2)
+        ]
+
+        for plan_name, pick_limit in (("free", 3), ("pro", 5), ("elite", 10), ("vip", 20)):
+            with self.subTest(plan=plan_name):
+                subscription = {
+                    "name": plan_name,
+                    "max_odds": pick_limit,
+                    "allowed_sports": ["soccer"],
+                    "allowed_markets": ["WLD"],
+                }
+                rejected_picks = build_display_picks(
+                    below_minimum,
+                    engine,
+                    subscription,
+                    admin_config,
+                    now,
+                )
+                picks = build_display_picks(matches, engine, subscription, admin_config, now)
+
+                self.assertEqual(rejected_picks, [])
+                self.assertEqual(len(picks), 2)
+                self.assertTrue(all(pick["odds"] >= 1.2 for pick in picks))
+                self.assertGreaterEqual(picks[0]["odds"] * picks[1]["odds"], 2.5)
+
+    def test_daily_picks_are_omitted_when_combined_odds_are_below_2_5(self) -> None:
+        now = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
+        matches = [
+            {
+                "home_team": f"Home {index}",
+                "away_team": f"Away {index}",
+                "league": "League A",
+                "sport": "soccer",
+                "market": "WLD",
+                "odds": {"home": 1.3},
+                "scheduled_at": "2026-10-01T18:00:00+00:00",
+            }
+            for index in range(2)
+        ]
+
+        picks = build_display_picks(
+            matches,
+            FixtureSelectionEngine(),
+            {"name": "free", "max_odds": 3, "allowed_sports": ["soccer"], "allowed_markets": ["WLD"]},
+            {"allowed_markets": {"soccer": ["WLD"]}},
+            now,
+        )
+
+        self.assertEqual(picks, [])
 
     def test_matches_include_future_schedule_at_least_three_hours_ahead(self) -> None:
         service = DataService()
@@ -283,7 +362,7 @@ class DataServiceScheduleTests(unittest.TestCase):
                 "away_team": "Later Away",
                 "sport": "soccer",
                 "market": "WLD",
-                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "odds": {"home": 2.6, "draw": 3.0, "away": 2.5},
                 "scheduled_at": "2026-10-02T18:00:00+00:00",
             }
         ]
@@ -293,7 +372,7 @@ class DataServiceScheduleTests(unittest.TestCase):
                 "away_team": f"Tomorrow Away {index}",
                 "sport": "soccer",
                 "market": "WLD",
-                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "odds": {"home": 2.6, "draw": 3.0, "away": 2.5},
                 "scheduled_at": "2026-10-01T18:00:00+00:00",
             })
 
@@ -317,7 +396,7 @@ class DataServiceScheduleTests(unittest.TestCase):
                 "league": "League A",
                 "sport": "soccer",
                 "market": "WLD",
-                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "odds": {"home": 2.6, "draw": 3.0, "away": 2.5},
                 "scheduled_at": "2026-10-01T18:00:00+00:00",
             })
         for index in range(2):
@@ -350,7 +429,7 @@ class DataServiceScheduleTests(unittest.TestCase):
                 "league": "League A",
                 "sport": "soccer",
                 "market": "WLD",
-                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "odds": {"home": 2.6, "draw": 3.0, "away": 2.5},
                 "scheduled_at": "2026-10-01T18:00:00+00:00",
             },
             {
@@ -360,7 +439,7 @@ class DataServiceScheduleTests(unittest.TestCase):
                 "competition_type": "international",
                 "sport": "soccer",
                 "market": "WLD",
-                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "odds": {"home": 2.6, "draw": 3.0, "away": 2.5},
                 "scheduled_at": "2026-10-01T19:00:00+00:00",
             },
             {
@@ -370,7 +449,7 @@ class DataServiceScheduleTests(unittest.TestCase):
                 "competition_type": "international",
                 "sport": "soccer",
                 "market": "WLD",
-                "odds": {"home": 2.0, "draw": 3.0, "away": 2.5},
+                "odds": {"home": 2.6, "draw": 3.0, "away": 2.5},
                 "scheduled_at": "2026-10-02T18:00:00+00:00",
             },
         ]
